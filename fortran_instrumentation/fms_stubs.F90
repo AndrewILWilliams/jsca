@@ -4,7 +4,11 @@
 
 module constants_mod
 implicit none
-real, public, parameter :: pi = 3.14159265358979323846
+! Values must mirror Isca's constants.F90 (and jsca/constants.py) exactly.
+real, public, parameter :: pi    = 3.14159265358979323846
+real, public, parameter :: grav  = 9.80
+real, public, parameter :: rdgas = 287.04
+real, public, parameter :: rvgas = 461.50
 end module constants_mod
 
 module fms_mod
