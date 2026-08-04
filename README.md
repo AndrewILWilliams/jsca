@@ -15,6 +15,7 @@ baseline benchmarking scripts.
 | `src/jsca/grid/legendre.py` | Faithful port of `compute_legendre` — GFDL normalization (∫P̃² dμ = 1, no Condon–Shortley), GFDL `(m, n)` storage with `l = m + n` |
 | `src/jsca/grid/spectral.py` | Truncation layout (T42/T85 presets), masks, Laplacian eigenvalues |
 | `src/jsca/grid/transforms.py` | JAX transforms: rfft in λ, Legendre einsum in μ; jit/vmap-clean; documented conventions for later fixture matching |
+| `src/jsca/dycore/` | **Time-stepping spine**: `leapfrog.py` (RAW-filtered leapfrog + two-level split, incl. the Fortran real-variant quirk), `press_and_geopot.py` (Simmons–Burridge/mcm pressures, hydrostatic geopotential), `matrix_invert.py` (semi-implicit solves; documented LAPACK deviation) — all fixture-validated against the real Fortran |
 | `src/jsca/testing/equivalence.py` | Tier-3 tools: ensemble envelope test (t, df=N−1), BH-FDR, practical floors, KS |
 | `tests/` | The suite described below — **run `pytest` first thing** |
 | `fortran_instrumentation/` | `jsca_dump.F90` (fixture harvester), stubs + standalone driver that dumps **real Fortran** grid/Legendre reference data |

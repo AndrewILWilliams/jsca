@@ -5,8 +5,10 @@ __pycache__/
 .mypy_cache/
 build/
 dist/
-tests/fixtures/raw/
+tests/fixtures/raw*/
 fortran_instrumentation/dump_grid_reference
+fortran_instrumentation/dump_dycore_reference
+fortran_instrumentation/dump_spectral_damping_reference
 baseline/timings.json
 *.o
 *.mod

@@ -19,7 +19,7 @@
 module jsca_dump_mod
 implicit none
 private
-public :: jsca_dump_1d, jsca_dump_2d, jsca_dump_3d, jsca_dump_scalar
+public :: jsca_dump_1d, jsca_dump_2d, jsca_dump_3d, jsca_dump_4d, jsca_dump_scalar
 
 integer, save :: counter = 0
 logical, save :: initialized = .false.
@@ -106,5 +106,19 @@ subroutine jsca_dump_3d(name, x)
   write(u) x
   close(u)
 end subroutine jsca_dump_3d
+
+subroutine jsca_dump_4d(name, x)
+  character(len=*), intent(in) :: name
+  real, intent(in) :: x(:,:,:,:)
+  character(len=600) :: fname
+  integer :: u
+  call init_once()
+  if (.not. active) return
+  fname = next_fname(name)
+  call write_manifest(name, shape(x), fname)
+  open(newunit=u, file=trim(fname)//'.bin', form='unformatted', access='stream', status='replace')
+  write(u) x
+  close(u)
+end subroutine jsca_dump_4d
 
 end module jsca_dump_mod
