@@ -70,7 +70,11 @@ subroutine run_one(tag, num_fourier, num_spherical, K, ntime, alpha, vopt, use_h
   ref_surf_p = 1.0e5
   prev = 1; curr = 2
 
-  call transforms_stub_init(num_fourier, num_spherical)
+  ! shared transforms_mod stub (also used by the spectral_damping driver): its
+  ! init takes (radius, num_fourier, num_spherical, fourier_inc); implicit only
+  ! consumes get_spec_domain, so fourier_inc is 1 and the eigen table it also
+  ! builds goes unused here.
+  call transforms_stub_init(radius, num_fourier, num_spherical, 1)
 
   allocate(pk(K+1), bk(K+1), ref_t(K), eigen(0:num_fourier,0:num_spherical), &
            wavenum(0:num_fourier,0:num_spherical))

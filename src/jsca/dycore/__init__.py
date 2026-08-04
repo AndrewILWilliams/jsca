@@ -18,6 +18,13 @@ from .press_and_geopot import (
     half_level_pressures,
     pressure_variables,
 )
+from .spectral_damping import (
+    SpectralDamping,
+    compute_spectral_damping,
+    compute_spectral_damping_div,
+    compute_spectral_damping_vor,
+    spectral_damping_init,
+)
 
 __all__ = [
     "leapfrog",
@@ -34,4 +41,9 @@ __all__ = [
     "implicit_init",
     "build_wave_matrices",
     "implicit_correction",
+    "SpectralDamping",
+    "spectral_damping_init",
+    "compute_spectral_damping",
+    "compute_spectral_damping_vor",
+    "compute_spectral_damping_div",
 ]
