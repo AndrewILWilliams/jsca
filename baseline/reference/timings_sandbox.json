@@ -1,0 +1,8 @@
+[
+  {"case": "held_suarez", "cores": 1, "days": 8, "dt_atmos": 600, "steps": 1152,
+   "fms_total_runtime_s": 109.28, "steps_per_s": 10.54, "sim_years_per_day": 17.3,
+   "host": "cloud-sandbox 2-core, gfortran 13.3 -O2, OpenMPI 4.1.6", "date": "2026-08-04"},
+  {"case": "held_suarez", "cores": 2, "days": 8, "dt_atmos": 600, "steps": 1152,
+   "fms_total_runtime_s": 55.19, "steps_per_s": 20.87, "sim_years_per_day": 34.3,
+   "host": "cloud-sandbox 2-core, gfortran 13.3 -O2, OpenMPI 4.1.6", "date": "2026-08-04"}
+]

@@ -1,0 +1,6 @@
+*---commit hash used for fortran code in workdir---*:
+"82ef171f312d6b570654324de03d66d7ee48e985"
+
+
+*---commit hash used for code in GFDL_BASE, including this python module---*:
+"82ef171f312d6b570654324de03d66d7ee48e985"

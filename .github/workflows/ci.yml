@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e .[dev]
+      - run: ruff check src tests bench
+      - run: pytest
+
+  fortran-fixtures:
+    # Regenerates grid/Legendre fixtures from the real Fortran when the Isca
+    # snapshot is available as a repo secret/artifact; skipped otherwise.
+    # Wire this up once the baseline repo location is decided (Phase 0 §2).
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "placeholder"

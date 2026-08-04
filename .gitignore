@@ -1,0 +1,12 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+tests/fixtures/raw/
+fortran_instrumentation/dump_grid_reference
+baseline/timings.json
+*.o
+*.mod

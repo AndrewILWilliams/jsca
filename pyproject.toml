@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jsca"
+version = "0.0.1"
+description = "JAX port of the Isca idealized GCM framework (Phase 0 starter kit)"
+readme = "README.md"
+requires-python = ">=3.11"
+# The Fortran source this ports is GPL-3.0 (Isca / GFDL FMS); the port is a
+# derivative work and carries the same licence.
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "PortingISCA project" }]
+dependencies = [
+    "jax>=0.4.35",
+    "numpy>=1.26",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.10"]
+io = ["xarray", "netcdf4", "cftime"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "NPY"]
+ignore = ["E741"]  # ambiguous variable name 'l' — total wavenumber, standard notation here
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
