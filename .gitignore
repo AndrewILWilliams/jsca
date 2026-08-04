@@ -11,6 +11,8 @@ fortran_instrumentation/dump_dycore_reference
 fortran_instrumentation/dump_spectral_damping_reference
 fortran_instrumentation/dump_implicit_reference
 fortran_instrumentation/dump_spherical_reference
+fortran_instrumentation/dump_water_borrowing_reference
+fortran_instrumentation/dump_global_integral_reference
 baseline/timings.json
 *.o
 *.mod

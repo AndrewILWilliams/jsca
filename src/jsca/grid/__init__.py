@@ -13,6 +13,7 @@ from .spectral import (
 from .transforms import (
     SphericalCoeffs,
     TransformParams,
+    area_weighted_global_mean,
     build_transforms,
     compute_div,
     compute_gradient_cos,
@@ -67,4 +68,5 @@ __all__ = [
     "compute_vor",
     "compute_div",
     "compute_vor_div",
+    "area_weighted_global_mean",
 ]

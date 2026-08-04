@@ -1,3 +1,4 @@
+from .global_integral import mass_weighted_global_integral
 from .implicit import (
     ImplicitParams,
     build_wave_matrices,
@@ -25,6 +26,7 @@ from .spectral_damping import (
     compute_spectral_damping_vor,
     spectral_damping_init,
 )
+from .water_borrowing import water_borrowing
 
 __all__ = [
     "leapfrog",
@@ -46,4 +48,6 @@ __all__ = [
     "compute_spectral_damping",
     "compute_spectral_damping_vor",
     "compute_spectral_damping_div",
+    "mass_weighted_global_integral",
+    "water_borrowing",
 ]

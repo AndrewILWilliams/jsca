@@ -308,3 +308,18 @@ def compute_vor_div(
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """``(u cos, v cos) -> (vorticity, divergence)`` — port of ``compute_vor_div``."""
     return compute_vor(params, u_cos, v_cos), compute_div(params, u_cos, v_cos)
+
+
+# --- grid-space global reduction (port of transforms.F90) --------------------
+
+
+def area_weighted_global_mean(params: TransformParams, field: jnp.ndarray) -> jnp.ndarray:
+    """Area-weighted global mean of a grid field — port of ``area_weighted_global_mean``.
+
+    ``field`` is ``(..., nlat, nlon)``; the Gaussian latitude weights (which sum to
+    2) weight each row: ``mean = sum_{j,i} w_j field / (sum_j w_j · nlon)``
+    (``transforms.F90`` L1059-1077). Uses JAX's pairwise summation rather than the
+    Fortran's sequential sum — a summation-order difference of a few ULP.
+    """
+    weighted = params.wts_lat[:, None] * field
+    return jnp.sum(weighted, axis=(-2, -1)) / (jnp.sum(params.wts_lat) * params.nlon)
