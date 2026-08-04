@@ -1,3 +1,9 @@
+from .implicit import (
+    ImplicitParams,
+    build_wave_matrices,
+    implicit_correction,
+    implicit_init,
+)
 from .leapfrog import (
     leapfrog,
     leapfrog_2level_a,
@@ -24,4 +30,8 @@ __all__ = [
     "compute_geopotential",
     "compute_z_bot",
     "compute_pressures_and_heights",
+    "ImplicitParams",
+    "implicit_init",
+    "build_wave_matrices",
+    "implicit_correction",
 ]

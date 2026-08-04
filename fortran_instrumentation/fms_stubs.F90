@@ -5,10 +5,13 @@
 module constants_mod
 implicit none
 ! Values must mirror Isca's constants.F90 (and jsca/constants.py) exactly.
-real, public, parameter :: pi    = 3.14159265358979323846
-real, public, parameter :: grav  = 9.80
-real, public, parameter :: rdgas = 287.04
-real, public, parameter :: rvgas = 461.50
+real, public, parameter :: pi     = 3.14159265358979323846
+real, public, parameter :: grav   = 9.80
+real, public, parameter :: rdgas  = 287.04
+real, public, parameter :: rvgas  = 461.50
+real, public, parameter :: kappa  = 2./7.
+real, public, parameter :: cp_air = rdgas/kappa   ! = EARTH_CP_AIR (constants.F90 L86)
+real, public, parameter :: radius = 6376.0e3      ! Isca default RADIUS (constants.F90 L254)
 end module constants_mod
 
 module fms_mod
