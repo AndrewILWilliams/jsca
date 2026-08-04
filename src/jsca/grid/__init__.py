@@ -11,8 +11,17 @@ from .spectral import (
     total_wavenumber,
 )
 from .transforms import (
+    SphericalCoeffs,
     TransformParams,
     build_transforms,
+    compute_div,
+    compute_gradient_cos,
+    compute_laplacian,
+    compute_lat_deriv_cos,
+    compute_lon_deriv_cos,
+    compute_ucos_vcos,
+    compute_vor,
+    compute_vor_div,
     fourier_to_grid,
     fourier_to_spectral,
     grid_to_fourier,
@@ -21,6 +30,7 @@ from .transforms import (
     laplacian,
     spectral_to_fourier,
     spectral_to_grid,
+    spherical_coeffs,
 )
 
 __all__ = [
@@ -47,4 +57,14 @@ __all__ = [
     "spectral_to_grid",
     "laplacian",
     "hyperdiffusion_multiplier",
+    "SphericalCoeffs",
+    "spherical_coeffs",
+    "compute_lon_deriv_cos",
+    "compute_lat_deriv_cos",
+    "compute_gradient_cos",
+    "compute_laplacian",
+    "compute_ucos_vcos",
+    "compute_vor",
+    "compute_div",
+    "compute_vor_div",
 ]
