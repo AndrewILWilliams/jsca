@@ -104,8 +104,8 @@ def build_dynamics_params(
     use_implicit: bool = True,
     ref_temperature_implicit: float = 300.0,
     damping_option: str = "resolution_dependent",
-    damping_coeff: float = 1.0e-4,
-    damping_order: int = 4,
+    damping_coeff: float = 1.15740741e-4,  # (0.1 day)^-1, Isca default
+    damping_order: int = 2,  # del^4 (Isca default; damping ~ eigen^2 ~ l^4)
     surf_geopotential: np.ndarray | None = None,
 ) -> DynamicsParams:
     """Build :class:`DynamicsParams` — the Python analogue of ``spectral_dynamics_init``."""
