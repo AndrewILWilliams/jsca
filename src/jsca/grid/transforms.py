@@ -310,6 +310,39 @@ def compute_vor_div(
     return compute_vor(params, u_cos, v_cos), compute_div(params, u_cos, v_cos)
 
 
+def divide_by_cos(params: TransformParams, field: jnp.ndarray) -> jnp.ndarray:
+    """Divide a grid field by ``cos(lat)`` — port of ``divide_by_cos`` (transforms.F90).
+
+    ``field`` is ``(..., nlat, nlon)``. Gaussian latitudes never reach the poles,
+    so ``cos(lat) > 0`` everywhere and the division is well defined.
+    """
+    cos_lat = jnp.sqrt(1.0 - params.sin_lat**2)
+    return field / cos_lat[:, None]
+
+
+def compute_pressure_gradient(
+    params: TransformParams, ln_ps: jnp.ndarray, psg: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Grid surface-pressure gradient ``(dx_psg, dy_psg)`` — port of
+    ``compute_pressure_gradient`` (spectral_dynamics.F90 L1192-1209).
+
+    Given spectral ``ln(ps)`` (``(..., M+1, N+1)`` complex) and grid ``psg``
+    (``(..., nlat, nlon)``), returns the zonal / meridional components of
+    ``grad(psg) = psg grad(ln ps)`` on the grid (``(..., nlat, nlon)`` each):
+    the cos-weighted spectral gradient of ``ln(ps)`` is transformed to the grid,
+    multiplied by ``psg``, then divided by ``cos(lat)``. These feed
+    :func:`jsca.dycore.four_in_one` as the pressure-gradient-force inputs.
+
+    Thin composition of ``compute_gradient_cos`` (Fortran-validated,
+    ``spherical_reference``) and ``spectral_to_grid``; validated end-to-end against
+    the analytic gradient of a band-limited ``ln(ps)`` in the fixture test.
+    """
+    dx_ln_ps, dy_ln_ps = compute_gradient_cos(params, ln_ps)
+    dx_psg = divide_by_cos(params, psg * spectral_to_grid(params, dx_ln_ps))
+    dy_psg = divide_by_cos(params, psg * spectral_to_grid(params, dy_ln_ps))
+    return dx_psg, dy_psg
+
+
 # --- grid-space global reduction (port of transforms.F90) --------------------
 
 
