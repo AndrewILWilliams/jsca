@@ -20,3 +20,5 @@ baseline/timings.json
 fortran_instrumentation/dump_vert_advection_reference
 fortran_instrumentation/dump_vert_coordinate_reference
 fortran_instrumentation/dump_hs_forcing_reference
+fortran_instrumentation/dump_four_in_one_reference
+fortran_instrumentation/four_in_one_body.inc
