@@ -1,3 +1,9 @@
+from .dynamics import (
+    DynamicsParams,
+    build_dynamics_params,
+    compute_tendencies,
+    rest_state,
+)
 from .fv_advection import (
     FvAdvectionParams,
     a_grid_horiz_advection,
@@ -92,4 +98,8 @@ __all__ = [
     "compute_corrections",
     "mass_correction",
     "energy_correction",
+    "DynamicsParams",
+    "build_dynamics_params",
+    "compute_tendencies",
+    "rest_state",
 ]
