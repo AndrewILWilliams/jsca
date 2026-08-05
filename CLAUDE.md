@@ -53,6 +53,7 @@ model that doesn't match Isca is a failure.
    email. Small commits, tests included. `ruff check src tests bench` and
    `pytest` must pass before any push/PR. Work on a branch and open a PR
    unless told otherwise.
+7. **Intelligible PRs:** For every PR, include a "Plain Language Summary" to explain what is going on to me (I am an atmospheric physicist, but not an accomplished programmer). Potentially include plots in the PRs, if relevant and helpful.
 
 ## The pinned Fortran reference
 
