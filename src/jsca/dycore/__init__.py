@@ -31,6 +31,7 @@ from .spectral_damping import (
     compute_spectral_damping_vor,
     spectral_damping_init,
 )
+from .spectral_dynamics import four_in_one
 from .vert_advection import (
     ADVECTIVE_FORM,
     FINITE_VOLUME_LINEAR,
@@ -82,4 +83,5 @@ __all__ = [
     "ADVECTIVE_FORM",
     "WEIGHTED_TENDENCY",
     "compute_vert_coord",
+    "four_in_one",
 ]
