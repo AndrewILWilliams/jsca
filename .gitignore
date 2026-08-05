@@ -19,3 +19,4 @@ baseline/timings.json
 *.mod
 fortran_instrumentation/dump_vert_advection_reference
 fortran_instrumentation/dump_vert_coordinate_reference
+fortran_instrumentation/dump_hs_forcing_reference
