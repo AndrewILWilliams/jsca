@@ -13,6 +13,7 @@ fortran_instrumentation/dump_implicit_reference
 fortran_instrumentation/dump_spherical_reference
 fortran_instrumentation/dump_water_borrowing_reference
 fortran_instrumentation/dump_global_integral_reference
+fortran_instrumentation/dump_fv_advection_reference
 baseline/timings.json
 *.o
 *.mod

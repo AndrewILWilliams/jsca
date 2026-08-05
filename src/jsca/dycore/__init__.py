@@ -1,3 +1,8 @@
+from .fv_advection import (
+    FvAdvectionParams,
+    a_grid_horiz_advection,
+    fv_advection_init,
+)
 from .global_integral import mass_weighted_global_integral
 from .implicit import (
     ImplicitParams,
@@ -50,4 +55,7 @@ __all__ = [
     "compute_spectral_damping_div",
     "mass_weighted_global_integral",
     "water_borrowing",
+    "FvAdvectionParams",
+    "fv_advection_init",
+    "a_grid_horiz_advection",
 ]
