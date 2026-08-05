@@ -28,6 +28,10 @@ integer function mpp_root_pe()
   mpp_root_pe = 0
 end function mpp_root_pe
 
+integer function mpp_npes()
+  mpp_npes = 1
+end function mpp_npes
+
 subroutine error_mesg(routine, message, level)
   character(len=*), intent(in) :: routine, message
   integer, intent(in) :: level
