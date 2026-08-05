@@ -17,3 +17,4 @@ fortran_instrumentation/dump_fv_advection_reference
 baseline/timings.json
 *.o
 *.mod
+fortran_instrumentation/dump_vert_advection_reference
