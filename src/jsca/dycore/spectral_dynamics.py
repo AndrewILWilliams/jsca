@@ -32,8 +32,12 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from jsca import constants
+from jsca.dycore.global_integral import mass_weighted_global_integral
+from jsca.grid.transforms import area_weighted_global_mean
 
 Array = jnp.ndarray
+
+_SQRT2 = jnp.sqrt(jnp.asarray(2.0))
 
 
 def _cumsum_exclusive(x: Array) -> Array:
@@ -115,3 +119,106 @@ def four_in_one(
     wg = jnp.concatenate([zero, inner, zero], axis=-1)
 
     return dt_psg, dt_tg, dt_ug, dt_vg, wg, wg_full
+
+
+# --------------------------------------------------------------------------- #
+# conservation corrections (compute_corrections, F90 L1213-1302)
+# --------------------------------------------------------------------------- #
+#
+# After the leapfrog produces the future state, tiny truncation errors let the
+# global dry-air mass and total energy drift. compute_corrections restores them
+# by rescaling the surface pressure so the global-mean surface pressure matches
+# the reference (mass), and by adding a uniform temperature offset so the global
+# total energy matches the reference (energy). Both are single global-mean
+# adjustments; the matching change is also made to the (0, 0) spectral
+# coefficient of ln(ps) / T so the grid and spectral states stay consistent.
+#
+# Layout: jsca grid convention, ``(..., nlat, nlon)`` for ``psg`` and
+# ``(..., nlat, nlon, K)`` for ``ug``/``vg``/``tg`` (the global integrals weight
+# by Gaussian latitude, so latitude must be axis -2 / -3). The Fortran
+# ``(lon, lat, lev)`` fixtures transpose lon<->lat.
+#
+# The wet-model water correction (F90 L1247-1281, incl. the MiMA pressure-limit
+# variant) is a follow-up: it needs the humidity tracer and its spectral
+# representation. ``do_water_correction`` raises here.
+
+
+def mass_correction(
+    params, psg: Array, ln_ps_00: Array, mean_surf_press_previous: Array
+) -> tuple[Array, Array, Array]:
+    """Global dry-mass correction — port of F90 L1226-1234.
+
+    Rescales ``psg`` so its area-weighted global mean equals
+    ``mean_surf_press_previous``; returns ``(psg, ln_ps_00, factor)`` with the
+    matching additive tweak ``+ sqrt(2) log(factor)`` applied to the ``(0,0)``
+    spectral coefficient of ``ln(ps)``.
+    """
+    mean_tmp = area_weighted_global_mean(params, psg)
+    factor = mean_surf_press_previous / mean_tmp
+    return factor[..., None, None] * psg, ln_ps_00 + _SQRT2 * jnp.log(factor), factor
+
+
+def energy_correction(
+    params,
+    pk: Array,
+    bk: Array,
+    tg: Array,
+    ts_00: Array,
+    ug: Array,
+    vg: Array,
+    psg: Array,
+    mean_energy_previous: Array,
+    mean_surf_press_previous: Array,
+    grav: float = constants.GRAV,
+    cp_air: float = constants.CP_AIR,
+) -> tuple[Array, Array, Array]:
+    """Global total-energy correction — port of F90 L1237-1243.
+
+    Adds a uniform temperature offset so the mass-weighted global-mean total
+    energy ``0.5(u^2+v^2) + cp T`` matches ``mean_energy_previous``. ``psg`` must
+    already be mass-corrected (F90 applies mass first). Returns
+    ``(tg, ts_00, temperature_correction)`` with ``+ sqrt(2) dT`` applied to the
+    ``(0,0)`` spectral coefficient of ``T``.
+    """
+    energy = 0.5 * (ug**2 + vg**2) + cp_air * tg  # (..., nlat, nlon, K)
+    mean_energy_tmp = mass_weighted_global_integral(params, pk, bk, energy, psg, grav)
+    dtemp = grav * (mean_energy_previous - mean_energy_tmp) / (cp_air * mean_surf_press_previous)
+    return tg + dtemp[..., None, None, None], ts_00 + _SQRT2 * dtemp[..., None], dtemp
+
+
+def compute_corrections(
+    params,
+    pk: Array,
+    bk: Array,
+    psg: Array,
+    ug: Array,
+    vg: Array,
+    tg: Array,
+    ln_ps_00: Array,
+    ts_00: Array,
+    mean_surf_press_previous: Array,
+    mean_energy_previous: Array,
+    do_mass_correction: bool = True,
+    do_energy_correction: bool = True,
+    do_water_correction: bool = False,
+    grav: float = constants.GRAV,
+    cp_air: float = constants.CP_AIR,
+) -> tuple[Array, Array, Array, Array]:
+    """Mass + energy conservation corrections — port of ``compute_corrections``
+    (F90 L1213-1302, dry path). Returns the corrected
+    ``(psg, tg, ln_ps_00, ts_00)``.
+
+    ``ln_ps_00`` is the ``(0,0)`` spectral coefficient of ``ln(ps)`` (a scalar per
+    batch); ``ts_00`` is the ``(0,0)`` coefficient of ``T`` (``(..., K)``). These
+    are real for a real field. ``do_water_correction`` (wet models) is not ported.
+    """
+    if do_water_correction:
+        raise NotImplementedError("water correction (wet models) is a follow-up")
+    if do_mass_correction:
+        psg, ln_ps_00, _ = mass_correction(params, psg, ln_ps_00, mean_surf_press_previous)
+    if do_energy_correction:
+        tg, ts_00, _ = energy_correction(
+            params, pk, bk, tg, ts_00, ug, vg, psg,
+            mean_energy_previous, mean_surf_press_previous, grav, cp_air,
+        )
+    return psg, tg, ln_ps_00, ts_00
