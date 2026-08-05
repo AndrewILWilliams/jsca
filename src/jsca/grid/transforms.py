@@ -310,6 +310,63 @@ def compute_vor_div(
     return compute_vor(params, u_cos, v_cos), compute_div(params, u_cos, v_cos)
 
 
+def uv_grid_from_vor_div(
+    params: TransformParams, vor_spec: jnp.ndarray, div_spec: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Grid winds ``(u, v)`` from spectral vorticity/divergence — port of
+    ``uv_grid_from_vor_div`` (transforms.F90 L700-719).
+
+    ``compute_ucos_vcos`` gives the spectral ``(u cos, v cos)``; transform to the
+    grid and divide out ``cos(lat)``. Spectral fields are ``(..., M+1, N+1)``;
+    grid winds are ``(..., nlat, nlon)``.
+    """
+    ucos_spec, vcos_spec = compute_ucos_vcos(params, vor_spec, div_spec)
+    u_grid = divide_by_cos(params, spectral_to_grid(params, ucos_spec))
+    v_grid = divide_by_cos(params, spectral_to_grid(params, vcos_spec))
+    return u_grid, v_grid
+
+
+def vor_div_from_uv_grid(
+    params: TransformParams, u_grid: jnp.ndarray, v_grid: jnp.ndarray, triang: bool = True
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Spectral vorticity/divergence from grid winds — port of
+    ``vor_div_from_uv_grid`` (transforms.F90 L742-783).
+
+    Divide the winds by ``cos(lat)``, analyse to spectral (keeping the ``l=M+1``
+    storage diagonal, i.e. ``do_truncation=.false.``), apply ``compute_vor_div``,
+    then triangular-truncate (``l<=M``). Only triangular truncation is ported
+    (jsca is a T_M model); ``triang=False`` (rhomboidal) raises.
+    """
+    if not triang:
+        raise NotImplementedError("rhomboidal truncation not ported (jsca is triangular)")
+    uc_spec = grid_to_spectral(params, divide_by_cos(params, u_grid))
+    vc_spec = grid_to_spectral(params, divide_by_cos(params, v_grid))
+    vor_spec, div_spec = compute_vor_div(params, uc_spec, vc_spec)
+    m = params.mask_prognostic  # l <= M (triangular_truncation)
+    return jnp.where(m, vor_spec, 0.0), jnp.where(m, div_spec, 0.0)
+
+
+def horizontal_advection(
+    params: TransformParams,
+    field_spec: jnp.ndarray,
+    u_grid: jnp.ndarray,
+    v_grid: jnp.ndarray,
+    tendency: jnp.ndarray,
+) -> jnp.ndarray:
+    """Add ``-u.grad(field)`` to ``tendency`` — port of ``horizontal_advection``
+    (transforms.F90 L808-831).
+
+    ``field_spec`` is spectral ``(..., M+1, N+1)``; ``u_grid``/``v_grid``/
+    ``tendency`` are grid ``(..., nlat, nlon)``. The physical gradient of the field
+    (cos-weighted spectral gradient -> grid -> divide by cos) is dotted with the
+    grid winds and subtracted from ``tendency``.
+    """
+    dx_spec, dy_spec = compute_gradient_cos(params, field_spec)
+    dx_grid = divide_by_cos(params, spectral_to_grid(params, dx_spec))
+    dy_grid = divide_by_cos(params, spectral_to_grid(params, dy_spec))
+    return tendency - u_grid * dx_grid - v_grid * dy_grid
+
+
 def divide_by_cos(params: TransformParams, field: jnp.ndarray) -> jnp.ndarray:
     """Divide a grid field by ``cos(lat)`` — port of ``divide_by_cos`` (transforms.F90).
 
