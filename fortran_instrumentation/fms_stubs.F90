@@ -12,6 +12,10 @@ real, public, parameter :: rvgas  = 461.50
 real, public, parameter :: kappa  = 2./7.
 real, public, parameter :: cp_air = rdgas/kappa   ! = EARTH_CP_AIR (constants.F90 L86)
 real, public, parameter :: radius = 6376.0e3      ! Isca default RADIUS (constants.F90 L254)
+real, public, parameter :: seconds_per_day = 8.640000e4  ! constants.F90 L176
+real, public, parameter :: stefan  = 5.6734e-8    ! constants.F90 L238
+real, public :: orbital_period = 365.25*8.640000e4  ! EARTH_ORBITAL_PERIOD (mutable; hs_forcing_nml member)
+real, public :: solar_const = 1368.22             ! constants.F90 L260
 end module constants_mod
 
 module fms_mod
@@ -64,5 +68,37 @@ integer function check_nml_error(io, name)
   character(len=*), intent(in) :: name
   check_nml_error = 0
 end function check_nml_error
+
+logical function file_exist(name)
+  character(len=*), intent(in) :: name
+  file_exist = .false.   ! no input files in the fixture sandbox -> namelist defaults
+end function file_exist
+
+function uppercase(cs) result(ucs)
+  character(len=*), intent(in) :: cs
+  character(len=len(cs)) :: ucs
+  integer :: k, ia
+  ucs = cs
+  do k = 1, len_trim(cs)
+    ia = iachar(cs(k:k))
+    if (ia >= iachar('a') .and. ia <= iachar('z')) ucs(k:k) = achar(ia - 32)
+  end do
+end function uppercase
+
+subroutine set_domain(domain)
+  integer, intent(in) :: domain
+end subroutine set_domain
+
+subroutine read_data(filename, fieldname, data, domain)
+  character(len=*), intent(in) :: filename, fieldname
+  real, intent(inout) :: data(:,:)
+  integer, intent(in) :: domain
+end subroutine read_data
+
+subroutine write_data(filename, fieldname, data, domain)
+  character(len=*), intent(in) :: filename, fieldname
+  real, intent(in) :: data(:,:)
+  integer, intent(in) :: domain
+end subroutine write_data
 
 end module fms_mod
