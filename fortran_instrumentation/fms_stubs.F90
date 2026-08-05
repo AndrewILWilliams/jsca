@@ -43,4 +43,8 @@ subroutine write_version_number(version, tagname)
   character(len=*), intent(in) :: version, tagname
 end subroutine write_version_number
 
+integer function stdout()
+  stdout = 6
+end function stdout
+
 end module fms_mod

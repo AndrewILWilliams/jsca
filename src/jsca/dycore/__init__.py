@@ -31,6 +31,18 @@ from .spectral_damping import (
     compute_spectral_damping_vor,
     spectral_damping_init,
 )
+from .vert_advection import (
+    ADVECTIVE_FORM,
+    FINITE_VOLUME_LINEAR,
+    FLUX_FORM,
+    FOURTH_CENTERED,
+    FOURTH_CENTERED_WTS,
+    SECOND_CENTERED,
+    SECOND_CENTERED_WTS,
+    VAN_LEER_LINEAR,
+    WEIGHTED_TENDENCY,
+    vert_advection,
+)
 from .water_borrowing import water_borrowing
 
 __all__ = [
@@ -58,4 +70,14 @@ __all__ = [
     "FvAdvectionParams",
     "fv_advection_init",
     "a_grid_horiz_advection",
+    "vert_advection",
+    "SECOND_CENTERED",
+    "SECOND_CENTERED_WTS",
+    "FOURTH_CENTERED",
+    "FOURTH_CENTERED_WTS",
+    "FINITE_VOLUME_LINEAR",
+    "VAN_LEER_LINEAR",
+    "FLUX_FORM",
+    "ADVECTIVE_FORM",
+    "WEIGHTED_TENDENCY",
 ]
