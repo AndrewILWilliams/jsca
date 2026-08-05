@@ -60,3 +60,11 @@ step exists.
 Set in the experiment namelist: `fms_nml: clock_grain = 'ROUTINE'` (the
 default coarse grain only reports "Total runtime"), then
 `python parse_timings.py <run log> --steps N`.
+
+## Held-Suarez reference climatology
+
+A full HS94 benchmark run (the same pinned build, T42L25, `damping_order=4`,
+`uneven_sigma`) provides the dry-dynamics validation target for jsca's
+Held-Suarez model. The pinned zonal-mean climatology and its provenance are in
+`baseline/reference/HS_REFERENCE.md`; regenerate with
+`bench/run_isca_held_suarez.py` → `baseline/make_hs_reference.py`.
