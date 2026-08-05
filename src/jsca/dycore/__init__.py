@@ -43,6 +43,7 @@ from .vert_advection import (
     WEIGHTED_TENDENCY,
     vert_advection,
 )
+from .vert_coordinate import compute_vert_coord
 from .water_borrowing import water_borrowing
 
 __all__ = [
@@ -80,4 +81,5 @@ __all__ = [
     "FLUX_FORM",
     "ADVECTIVE_FORM",
     "WEIGHTED_TENDENCY",
+    "compute_vert_coord",
 ]

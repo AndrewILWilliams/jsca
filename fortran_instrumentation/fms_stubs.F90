@@ -47,4 +47,22 @@ integer function stdout()
   stdout = 6
 end function stdout
 
+integer function stdlog()
+  stdlog = 6
+end function stdlog
+
+integer function open_namelist_file()
+  open_namelist_file = 10
+end function open_namelist_file
+
+subroutine close_file(unit)
+  integer, intent(in) :: unit
+end subroutine close_file
+
+integer function check_nml_error(io, name)
+  integer, intent(in) :: io
+  character(len=*), intent(in) :: name
+  check_nml_error = 0
+end function check_nml_error
+
 end module fms_mod
