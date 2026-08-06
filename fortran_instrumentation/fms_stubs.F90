@@ -85,8 +85,35 @@ integer function open_namelist_file()
   open_namelist_file = 10
 end function open_namelist_file
 
-subroutine close_file(unit)
+! Real file open (I/O plumbing, no numerics). Some modules (e.g.
+! qe_moist_convection) read their namelist from a real input.nml via open_file
+! and also append to logfile.out; the fixture driver writes that input.nml. A
+! newunit-based open keeps this independent of the fixed unit from
+! open_namelist_file. action='read'/'write'/'append' map to the obvious opens.
+integer function open_file(file, action, form, threading, recl)
+  character(len=*), intent(in)           :: file
+  character(len=*), intent(in), optional :: action, form, threading
+  integer,          intent(in), optional :: recl
+  integer :: unit
+  character(len=16) :: act
+  act = 'read'
+  if (present(action)) act = action
+  if (trim(act) == 'append') then
+    open(newunit=unit, file=trim(file), status='unknown', position='append')
+  else if (trim(act) == 'write') then
+    open(newunit=unit, file=trim(file), status='replace')
+  else
+    open(newunit=unit, file=trim(file), status='old', action='read')
+  end if
+  open_file = unit
+end function open_file
+
+subroutine close_file(unit, status)
   integer, intent(in) :: unit
+  character(len=*), intent(in), optional :: status
+  logical :: is_open
+  inquire(unit=unit, opened=is_open)
+  if (is_open) close(unit)
 end subroutine close_file
 
 integer function check_nml_error(io, name)
@@ -95,9 +122,12 @@ integer function check_nml_error(io, name)
   check_nml_error = 0
 end function check_nml_error
 
+! Real existence check via INQUIRE. In sandboxes with no input.nml this returns
+! .false. exactly as before (modules fall back to namelist defaults); a driver
+! that writes an input.nml (e.g. the qe_moist_convection fixture) gets .true.
 logical function file_exist(name)
   character(len=*), intent(in) :: name
-  file_exist = .false.   ! no input files in the fixture sandbox -> namelist defaults
+  inquire(file=trim(name), exist=file_exist)
 end function file_exist
 
 function uppercase(cs) result(ucs)

@@ -28,3 +28,5 @@ hs_run.log
 scratchpad_hs_clim.npz
 fortran_instrumentation/dump_sat_vapor_pres_reference
 fortran_instrumentation/dump_lscale_cond_reference
+fortran_instrumentation/dump_qe_moist_convection_reference
+fortran_instrumentation/input.nml
