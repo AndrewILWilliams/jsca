@@ -71,11 +71,10 @@ program dump_qe_moist_convection_reference
       ps(i,j) = 1.0e5
       ! surface temperature: warm & moist (convecting) -> cool & dry (stable)
       tsurf = 302.0 - 14.0 * frac - 6.0 * (sin(lat*3.14159/180.0))**2
-      ! Lapse rate spans near-neutral (row j=1) to steep. Near-neutral + very
-      ! moist columns have a small temperature deficit but a large moisture
-      ! excess (Pq>Pt), exercising the deep-convection time-scale-change branch;
-      ! steeper/drier columns give the Tref-shift branch, shallow, or no-CAPE.
-      gamma = 5.5e-3 + 0.6e-3 * real(j-1) + 1.5e-3 * frac  ! lapse rate (K/m)
+      ! Conditionally unstable lapse rate (kept away from neutral so deep columns
+      ! have Pt clearly greater than Pq -> the Tref-shift branch, avoiding the
+      ! Pq==Pt knife-edge). Spans deep / shallow / no-CAPE across the grid.
+      gamma = 6.8e-3 + 0.5e-3 * real(j-1) + 1.2e-3 * frac  ! lapse rate (K/m)
       rh0   = 0.90 - 0.55 * frac                          ! low-level RH
       rhtop = 0.20
 
