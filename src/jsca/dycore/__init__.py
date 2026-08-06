@@ -42,6 +42,7 @@ from .spectral_dynamics import (
     energy_correction,
     four_in_one,
     mass_correction,
+    water_correction,
 )
 from .vert_advection import (
     ADVECTIVE_FORM,
@@ -98,6 +99,7 @@ __all__ = [
     "compute_corrections",
     "mass_correction",
     "energy_correction",
+    "water_correction",
     "DynamicsParams",
     "build_dynamics_params",
     "compute_tendencies",

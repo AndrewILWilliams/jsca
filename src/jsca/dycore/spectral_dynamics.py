@@ -138,9 +138,12 @@ def four_in_one(
 # by Gaussian latitude, so latitude must be axis -2 / -3). The Fortran
 # ``(lon, lat, lev)`` fixtures transpose lon<->lat.
 #
-# The wet-model water correction (F90 L1247-1281, incl. the MiMA pressure-limit
-# variant) is a follow-up: it needs the humidity tracer and its spectral
-# representation. ``do_water_correction`` raises here.
+# The wet-model water correction (F90 L1320-1349, incl. the MiMA pressure-limit
+# variant) is :func:`water_correction` below. It acts on the humidity tracer,
+# which is *not* among ``compute_corrections``'s returned fields, so the orchestrator
+# still leaves ``do_water_correction`` raising and the correction is applied via the
+# standalone function (as held_suarez applies mass/energy standalone); the moist
+# assembly (item 11) wires it in.
 
 
 def mass_correction(
@@ -186,6 +189,55 @@ def energy_correction(
     return tg + dtemp[..., None, None, None], ts_00 + _SQRT2 * dtemp[..., None], dtemp
 
 
+def water_correction(
+    params,
+    pk: Array,
+    bk: Array,
+    qg: Array,
+    psg: Array,
+    p_full: Array,
+    mean_water_previous: Array,
+    water_correction_limit: float,
+    grav: float = constants.GRAV,
+) -> tuple[Array, Array]:
+    """Global water (humidity) conservation correction — port of F90 L1320-1349.
+
+    Restores the global-mean water vapour that leapfrog truncation drifts, by
+    rescaling the grid humidity so its mass-weighted global mean returns to the
+    reference ``mean_water_previous``. Frierson's ``sphum`` is a **grid** tracer
+    (Isca ``field_table`` ``numerical_representation='grid'``), so only the grid
+    branch runs — the spectral branch (F90 L1345-1347), whose ``where(p_full…)``
+    mask is grid-shaped while ``spec_tracers`` is spectral-shaped, is never reached
+    for Frierson and is deliberately not ported.
+
+    **MiMA pressure limit (F90 L1327-1341).** With ``water_correction_limit`` the
+    rescaling is confined to levels with ``p_full ≥ limit`` (Frierson: 200 hPa) —
+    high, thin levels are left alone. Let ``m = <q>`` (global mass-weighted mean),
+    ``c`` the same mean over the corrected region (``p_full ≥ limit``) and ``n`` the
+    mean over the un-corrected region. The naive factor ``m_prev/m`` is remapped so
+    that scaling *only* the corrected region still hits the global target::
+
+        factor = (m_prev/m)·(1 + n/c) − n/c                     (F90 L1338)
+        q ← factor·q   where p_full ≥ limit                     (F90 L1339-1341)
+
+    The whole correction is guarded by ``m > 0`` (F90 L1336); below that (no water)
+    the humidity is returned unchanged. Returns ``(qg_corrected, factor)``.
+    """
+    mean_water_tmp = mass_weighted_global_integral(params, pk, bk, qg, psg, grav)
+    mask = p_full >= water_correction_limit  # corrected region (F90 water_mask)
+    corr = mass_weighted_global_integral(
+        params, pk, bk, jnp.where(mask, qg, 0.0), psg, grav)
+    not_corr = mass_weighted_global_integral(
+        params, pk, bk, jnp.where(mask, 0.0, qg), psg, grav)
+
+    ratio = not_corr / corr
+    factor = (mean_water_previous / mean_water_tmp) * (1.0 + ratio) - ratio
+    qg_scaled = jnp.where(mask, factor[..., None, None, None] * qg, qg)
+
+    do_corr = (mean_water_tmp > 0.0)[..., None, None, None]
+    return jnp.where(do_corr, qg_scaled, qg), factor
+
+
 def compute_corrections(
     params,
     pk: Array,
@@ -213,7 +265,10 @@ def compute_corrections(
     are real for a real field. ``do_water_correction`` (wet models) is not ported.
     """
     if do_water_correction:
-        raise NotImplementedError("water correction (wet models) is a follow-up")
+        # water acts on the humidity tracer, not on this orchestrator's returned
+        # (psg, tg, ln_ps_00, ts_00); apply the standalone water_correction instead.
+        raise NotImplementedError(
+            "water correction acts on humidity; use the standalone water_correction()")
     if do_mass_correction:
         psg, ln_ps_00, _ = mass_correction(params, psg, ln_ps_00, mean_surf_press_previous)
     if do_energy_correction:

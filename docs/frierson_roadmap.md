@@ -69,15 +69,24 @@ implicit vertical-diffusion solve.
 7. `vert_diff` (`gcm_vert_diff_down/up`) — implicit tridiagonal diffusion + surface coupling. ✅ done ← this PR
    (down/up split validated; the T/q surface coupling is closed by `mixed_layer`, item 8.)
 8. `mixed_layer` — slab ocean. ✅ done
-9. `damping_driver` — Rayleigh sponge. ✅ done ← this PR
+9. `damping_driver` — Rayleigh sponge. ✅ done
 
 **Phase B complete.**
 
-**Phase C — moist dynamics + assembly**
-10. Moist spectral core — `sphum` as a prognostic tracer (spectral advection +
-    `water_borrowing`, both partly ported); `four_in_one` tracer handling.
+**Phase C — moist dynamics + assembly** ← in progress
+10. Moist spectral core — `sphum` as a prognostic tracer (grid advection +
+    `water_borrowing`, both partly ported); `four_in_one` tracer handling; the
+    **global water-conservation correction** (`compute_corrections`, grid-tracer +
+    MiMA pressure-limit path). ✅ water correction done ← this PR; grid tracer
+    advection assembly remains.
 11. `idealized_moist_phys` assembly + the Frierson run + climatology validation
     vs Isca (`jsca.testing`).
+
+Note: Frierson's `sphum` is a **grid** tracer (Isca `field_table`
+`numerical_representation='grid'`), so the moist spectral core uses the grid
+advection path (`a_grid_horiz_advection` + `vert_advection`), not the spectral
+one. The water correction's spectral branch is therefore never reached and is
+deliberately not ported.
 
 Roughly one module per session. Fidelity is gated the same way as the dry core:
 committed Fortran fixtures per routine, then the end-to-end climatology test.
