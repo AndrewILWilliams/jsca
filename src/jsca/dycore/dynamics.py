@@ -255,6 +255,22 @@ def compute_tendencies(
     dt_divs = compute_spectral_damping_div(p.damping, divs[..., previous], dt_divs, delta_t)
     dt_ts = compute_spectral_damping(p.damping, ts[..., previous], dt_ts, delta_t)
 
+    # Triangular-truncate the prognostic tendencies to l = m + n <= M. Isca's
+    # trans_grid_to_spherical truncates the prognostic tendencies (dt_ts, dt_ln_ps
+    # and, via the truncated geopotential+KE, dt_divs) to the triangle by default,
+    # whereas jsca's grid_to_spectral keeps the l = M+1 storage diagonal (needed
+    # for the d/dmu derivative paths). Left untruncated, the l = M+1 modes are
+    # unphysical grid-scale content that nothing damps: at high resolution / large
+    # dt they grow ~exponentially and blow the model up (the T42 dt=600
+    # instability). Zeroing them here restores per-step agreement with Isca to
+    # machine precision. vor/div are already triangular from vor_div_from_uv_grid,
+    # but dt_divs picks up the l=M+1 row from the Laplacian of (phi + KE).
+    mp = p.transforms.mask_prognostic  # (m, n), True where l <= M
+    dt_vors = jnp.where(mp[..., None], dt_vors, 0.0)
+    dt_divs = jnp.where(mp[..., None], dt_divs, 0.0)
+    dt_ts = jnp.where(mp[..., None], dt_ts, 0.0)
+    dt_ln_ps = jnp.where(mp, dt_ln_ps, 0.0)
+
     return dt_vors, dt_divs, dt_ts, dt_ln_ps
 
 

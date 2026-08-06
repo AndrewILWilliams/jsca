@@ -37,18 +37,30 @@ ineffective" hypothesis was wrong).
 A fourth latent gap — `build_dynamics_params` not threading the `uneven_sigma`
 stretching parameters into the vertical coordinate — was fixed alongside.
 
-## Still open
+## The `dt=600` growing mode — found and fixed
 
-A subtler, **`dt=600`-only** growing mode remains: even driven by Isca's exact
-forcing, jsca's trajectory diverges from Isca's, growing ~1.5×/step from
-machine-precision (temperature leads, then vorticity/divergence). It is **not**
-the energy correction (injecting Isca's exact global-mean correction does not
-change it) and jsca is stable at `dt ≤ 300`. The remaining suspects are the
-semi-implicit vertical solve at large `dt` (jsca uses LAPACK where Isca uses
-Gauss-Jordan — a documented ~1e-11 deviation that could excite a marginal mode
-near the stability edge) or another small operator difference. The step fixture
-is the tool to bisect it; the coarse-resolution fixture committed here stays well
-clear of the mode, so it passes cleanly and guards the fixes above.
+A subtler, `dt=600`-only mode initially remained: even with Isca's exact forcing,
+jsca's trajectory grew ~1.5×/step from machine precision. Bisecting the error
+against Isca in `(wavenumber, level, field)` space localized it immediately: the
+growth lived **entirely in the total-wavenumbers `l = m + n > M`**, which are
+outside the T_M triangular truncation and are **exactly zero in Isca**. jsca was
+leaving them non-zero.
 
-Practically: the Held-Suarez climatology is `dt`-insensitive once stable, so the
-jsca-vs-Isca comparison can run at `dt=300` while the `dt=600` mode is chased.
+The cause: Isca truncates the prognostic tendencies to the triangle (`l <= M`)
+inside `trans_grid_to_spherical` (default `do_truncation=.true.`), whereas jsca's
+`grid_to_spectral` keeps the `l = M+1` storage diagonal — correct for the
+`d/dmu` derivative paths (`four_in_one`, the spherical operators), but it leaks
+`l = M+1` into `dt_ts`, `dt_ln_ps` and (via the Laplacian of `phi + KE`)
+`dt_divs`. Those modes are unphysical grid-scale content that nothing damps; at
+high resolution / large `dt` they grow exponentially and blow the model up. At
+`dt <= 300` (or T21) they grow slowly enough to stay bounded — which is why the
+model *looked* fine there.
+
+**Fix:** triangular-truncate the prognostic tendencies to `l <= M` at the end of
+`compute_tendencies` (and the initial fields in `initial_state`), matching Isca.
+Per-step agreement with Isca returns to machine precision (vor/div ~1e-15), and
+the model is **stable at the full Isca benchmark config (T42 L25, `dt=600 s`)** —
+it now spins up smoothly where it previously NaNed by day 2.
+
+The only residual is the ~1e-5 global-mean `(0,0)` energy-correction term (does
+not grow, does not affect stability), left as a separate minor item.

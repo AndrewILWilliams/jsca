@@ -94,8 +94,13 @@ def initial_state(m: HeldSuarezModel, temperature: float = 264.0, surface_press:
     tg = np.full((k, m.nlat, m.nlon), temperature)
     rng = np.random.default_rng(seed)
     tg = tg + perturb * rng.standard_normal(tg.shape)
+    # triangular-truncate the initial fields to l <= M (Isca's get_initial_fields
+    # produces triangular fields; grid_to_spectral keeps the l=M+1 storage row)
+    mp = tf.mask_prognostic
     ts = _to_last(grid_to_spectral(tf, jnp.asarray(tg)))  # (m, n, K)
+    ts = jnp.where(mp[..., None], ts, 0.0)
     ln_ps = grid_to_spectral(tf, jnp.full((m.nlat, m.nlon), float(np.log(surface_press))))
+    ln_ps = jnp.where(mp, ln_ps, 0.0)
     zero = jnp.zeros_like(ts)
     stack = lambda x: jnp.stack([x, x], axis=-1)  # noqa: E731
     return stack(zero), stack(zero), stack(ts), stack(ln_ps)
