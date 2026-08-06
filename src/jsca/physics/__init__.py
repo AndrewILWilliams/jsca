@@ -15,6 +15,12 @@ from .sat_vapor_pres import (
     saturation_specific_humidity_and_deriv,
     saturation_vapor_pressure,
 )
+from .two_stream_gray_rad import (
+    GrayRadParams,
+    gray_rad_down,
+    gray_rad_up,
+    two_stream_gray_rad,
+)
 
 __all__ = [
     "HsForcingParams",
@@ -28,4 +34,8 @@ __all__ = [
     "lscale_cond",
     "convective_cape",
     "qe_moist_convection",
+    "GrayRadParams",
+    "gray_rad_down",
+    "gray_rad_up",
+    "two_stream_gray_rad",
 ]
