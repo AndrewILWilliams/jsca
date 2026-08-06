@@ -63,25 +63,35 @@ def d_saturation_vapor_pressure_dt(t: Array, es: Array | None = None) -> Array:
     return constants.HLV * es / (constants.RVGAS * t**2)
 
 
-def saturation_specific_humidity(t: Array, p: Array) -> Array:
+def saturation_specific_humidity(t: Array, p: Array, hc: float = 1.0) -> Array:
     """Saturation specific humidity ``qs`` (kg/kg) — the default (Frierson) form.
 
     Port of ``compute_qs_k`` L767-772: ``qs = eps*es/(p - (1-eps)*es)``, falling
     back to ``eps`` where ``denom <= 0``. ``t`` in kelvin, ``p`` in Pa.
+
+    ``hc`` is the relative-humidity scaling that ``compute_qs_k`` applies to the
+    saturation vapor pressure (``esloc = esloc*hc_loc``, L674): callers such as
+    ``lscale_cond`` pass ``hc`` so condensation triggers at a sub-saturated
+    threshold. ``hc = 1`` (default, and Frierson's setting) recovers plain qs.
     """
-    es = saturation_vapor_pressure(t)
+    es = hc * saturation_vapor_pressure(t)
     denom = p - (1.0 - EPS) * es
     return jnp.where(denom > 0.0, EPS * es / jnp.where(denom > 0.0, denom, 1.0), EPS)
 
 
-def saturation_specific_humidity_and_deriv(t: Array, p: Array) -> tuple[Array, Array]:
+def saturation_specific_humidity_and_deriv(
+    t: Array, p: Array, hc: float = 1.0
+) -> tuple[Array, Array]:
     """``(qs, dqs/dT)`` together (``compute_qs_k`` L767-775).
 
     ``dqs/dT = eps*p*(des/dT)/denom^2`` — Isca computes this with ``denom^2``
-    regardless of the sign of ``denom``.
+    regardless of the sign of ``denom``. ``hc`` scales both ``es`` and ``des``
+    (``compute_qs_k`` L669, L674) before the qs/dqsdT formulae; ``hc = 1`` is the
+    default. See :func:`saturation_specific_humidity`.
     """
-    es = saturation_vapor_pressure(t)
-    des = d_saturation_vapor_pressure_dt(t, es)
+    es0 = saturation_vapor_pressure(t)
+    es = hc * es0
+    des = hc * d_saturation_vapor_pressure_dt(t, es=es0)
     denom = p - (1.0 - EPS) * es
     safe = jnp.where(denom != 0.0, denom, 1.0)
     qs = jnp.where(denom > 0.0, EPS * es / safe, EPS)

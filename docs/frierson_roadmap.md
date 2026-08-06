@@ -47,9 +47,9 @@ implicit vertical-diffusion solve.
 ## Port plan (dependency-ordered; each module gets Tier-1 Fortran fixtures)
 
 **Phase A — column thermodynamics (self-contained, easy to fixture)**
-1. `sat_vapor_pres` (do_simple) — es(T), qs(T,p). Foundation for 2, 3, 4. ← starting here
-2. `lscale_cond` (do_simple) — large-scale condensation.
-3. `qe_moist_convection` — simple Betts-Miller.
+1. `sat_vapor_pres` (do_simple) — es(T), qs(T,p). Foundation for 2, 3, 4. ✅ done (PR #19)
+2. `lscale_cond` (do_simple, do_evap) — large-scale condensation. ✅ done ← this PR
+3. `qe_moist_convection` — simple Betts-Miller. ← next
 4. `two_stream_gray_rad` — Frierson grey radiation + p2 insolation.
 
 **Phase B — surface & boundary layer**
