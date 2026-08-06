@@ -26,6 +26,7 @@ import numpy as np
 
 from jsca import constants
 from jsca.dycore.dynamics import DynamicsParams, _to_last, build_dynamics_params, compute_tendencies
+from jsca.dycore.global_integral import mass_weighted_global_integral
 from jsca.dycore.implicit import build_wave_matrices
 from jsca.dycore.leapfrog import leapfrog
 from jsca.dycore.press_and_geopot import pressure_variables
@@ -45,8 +46,10 @@ Array = jnp.ndarray
 class HeldSuarezModel:
     dyn: DynamicsParams
     hs: HsForcingParams
-    wave_matrix: Array  # for delta_t = 2 dt
+    wave_matrix: Array  # for delta_t = 2 dt (the leapfrog interval)
+    wave_matrix_cold: Array  # for delta_t = dt (the cold-start forward step)
     lat2d: Array  # (nlat, nlon)
+    dt: float  # physical timestep
     delta_t: float  # leapfrog interval (2 dt)
     robert_coeff: float
     raw_filter_coeff: float
@@ -72,11 +75,12 @@ def build_held_suarez(
     hs = hs_forcing_init()
     delta_t = 2.0 * dt
     wave_matrix = build_wave_matrices(dyn.implicit, delta_t)
+    wave_matrix_cold = build_wave_matrices(dyn.implicit, dt)
     lat = np.arcsin(np.asarray(dyn.transforms.sin_lat))[:, None] * np.ones((1, nlon))
     return HeldSuarezModel(
-        dyn=dyn, hs=hs, wave_matrix=wave_matrix, lat2d=jnp.asarray(lat),
-        delta_t=delta_t, robert_coeff=robert_coeff, raw_filter_coeff=raw_filter_coeff,
-        nlat=nlat, nlon=nlon,
+        dyn=dyn, hs=hs, wave_matrix=wave_matrix, wave_matrix_cold=wave_matrix_cold,
+        lat2d=jnp.asarray(lat), dt=dt, delta_t=delta_t, robert_coeff=robert_coeff,
+        raw_filter_coeff=raw_filter_coeff, nlat=nlat, nlon=nlon,
     )
 
 
@@ -110,35 +114,49 @@ def _grid_from_spectral(m: HeldSuarezModel, vors, divs, ts, ln_ps, slot):
     return u, v, t, ps
 
 
-def step(m: HeldSuarezModel, state):
+def step(m: HeldSuarezModel, state, delta_t: float | None = None, wave_matrix=None):
     """One leapfrog step: HS forcing -> dynamics tendencies -> leapfrog -> mass +
-    energy corrections -> roll time slots. ``state = (vors, divs, ts, ln_ps)``."""
+    energy corrections -> roll time slots. ``state = (vors, divs, ts, ln_ps)``.
+
+    ``delta_t``/``wave_matrix`` default to the leapfrog interval ``2 dt``; the
+    cold-start step passes ``dt`` (see :func:`integrate`), matching Isca's
+    ``spectral_dynamics`` (``delta_t = dt_real`` when ``previous == current``,
+    ``2 dt_real`` after).
+    """
     vors, divs, ts, ln_ps = state
     prev, cur, fut = 0, 1, 0  # future overwrites the previous slot
     dyn, tf = m.dyn, m.dyn.transforms
+    dtl = m.delta_t if delta_t is None else delta_t
+    wm = m.wave_matrix if wave_matrix is None else wave_matrix
 
-    # grid state at current (for HS forcing) and previous (winds for friction, and
-    # the reference means for the corrections)
-    u_c, v_c, t_c, ps_c = _grid_from_spectral(m, vors, divs, ts, ln_ps, cur)
+    # grid state at current (pressure) and previous (winds/temperature for the
+    # forcing, and the reference means for the corrections)
+    _, _, _, ps_c = _grid_from_spectral(m, vors, divs, ts, ln_ps, cur)
     u_p, v_p, t_p, ps_p = _grid_from_spectral(m, vors, divs, ts, ln_ps, prev)
     p_half, _, p_full, _ = pressure_variables(dyn.pk, dyn.bk, ps_c, dyn.vert_difference_option)
 
-    # Held-Suarez physics tendencies (grid)
-    udt, vdt, tdt, _ = hs_forcing(m.hs, m.lat2d, p_half, p_full, u_c, v_c, t_c, u_p, v_p, m.delta_t)
+    # Held-Suarez physics tendencies. Pressure is at the CURRENT level but the
+    # winds/temperature are at the PREVIOUS level -- Isca's driver passes
+    # ug/vg/tg(previous) (atmosphere.F90 L304-311). Applying Rayleigh friction to
+    # the lagged level is essential for leapfrog stability; using the current
+    # level feeds the computational mode (verified: current-level friction is a
+    # ~8% error against the Fortran and destabilises the high-resolution run).
+    udt, vdt, tdt, _ = hs_forcing(m.hs, m.lat2d, p_half, p_full, u_p, v_p, t_p, u_p, v_p, dtl)
 
-    # reference global means from the previous level (initialize_corrections)
+    # reference global means from the previous level advanced by the physics
+    # forcing over delta_t (initialize_corrections, spectral_dynamics.F90 L1373-1379)
     mean_sp_prev = area_weighted_global_mean(tf, ps_p)
-    from jsca.dycore.global_integral import mass_weighted_global_integral
-    energy_p = 0.5 * (u_p**2 + v_p**2) + constants.CP_AIR * t_p
+    energy_p = (0.5 * ((u_p + udt * dtl) ** 2 + (v_p + vdt * dtl) ** 2)
+                + constants.CP_AIR * (t_p + tdt * dtl))
     mean_en_prev = mass_weighted_global_integral(tf, dyn.pk, dyn.bk, energy_p, ps_p)
 
     # dynamical tendencies (with the physics forcing folded in)
     dvor, ddiv, dts, dlnps = compute_tendencies(
-        dyn, vors, divs, ts, ln_ps, m.delta_t, m.wave_matrix, prev, cur, udt, vdt, tdt,
+        dyn, vors, divs, ts, ln_ps, dtl, wm, prev, cur, udt, vdt, tdt,
     )
 
     # leapfrog + RAW filter (future overwrites slot 0)
-    rc, raw, dtl = m.robert_coeff, m.raw_filter_coeff, m.delta_t
+    rc, raw = m.robert_coeff, m.raw_filter_coeff
     vors = leapfrog(vors, dvor, prev, cur, fut, dtl, rc, raw)
     divs = leapfrog(divs, ddiv, prev, cur, fut, dtl, rc, raw)
     ts = leapfrog(ts, dts, prev, cur, fut, dtl, rc, raw)
@@ -160,11 +178,21 @@ def step(m: HeldSuarezModel, state):
     return (roll(vors), roll(divs), roll(ts), roll(ln_ps))
 
 
-def integrate(m: HeldSuarezModel, state, n_steps: int, sample_every: int = 0):
+def integrate(m: HeldSuarezModel, state, n_steps: int, sample_every: int = 0,
+              cold_start: bool = False):
     """Integrate ``n_steps`` with ``lax.scan``. If ``sample_every > 0``, also
     returns the grid ``(u, T, ps)`` at the current level every ``sample_every``
-    steps (for climatology accumulation)."""
+    steps (for climatology accumulation).
+
+    ``cold_start=True`` runs the first step as Isca's start-up forward step
+    (``delta_t = dt`` with the ``dt`` wave matrix) before the leapfrog scan; pass
+    it only on the first integrate from the resting :func:`initial_state`.
+    """
     jstep = jax.jit(lambda s: step(m, s))
+
+    if cold_start and n_steps > 0:
+        state = jax.jit(lambda s: step(m, s, m.dt, m.wave_matrix_cold))(state)
+        n_steps -= 1
 
     if sample_every <= 0:
         def body(s, _):

@@ -63,7 +63,7 @@ def main() -> None:
     t0 = time.time()
     chunk = 10
     for d0 in range(0, args.spinup_days, chunk):
-        st = integrate(m, st, chunk * spd)
+        st = integrate(m, st, chunk * spd, cold_start=(d0 == 0))
         u, v, _t, _ps = _grid_from_spectral(m, *st, 1)
         ke = float(area_weighted_global_mean(tf, jnp.mean(0.5 * (u**2 + v**2), -1)))
         umax, isnan = float(jnp.abs(u).max()), bool(jnp.isnan(u).any())
