@@ -67,7 +67,8 @@ _SMALL = 1.0e-10        # F90 small (avoids /0 in the dry limit)
 TMIN = 160.0            # Frierson Tmin: parcel-too-cold cutoff + table lower bound
 TMAX = 350.0            # Frierson Tmax: table upper bound
 VAL_INC = 0.01          # F90 val_inc: LCL table spacing
-RHBM = 0.7              # Frierson rhbm (used by the adjustment stage)
+RHBM = 0.7              # Frierson rhbm: reference relative humidity
+TAU_BM = 7200.0         # Betts-Miller relaxation timescale (s), qe default
 
 
 def _es_closed(t):
@@ -332,3 +333,183 @@ def convective_cape(Tin: Array, qin: Array, p_full: Array, p_half: Array):
     cape, cin, klzb, klcl, _, _ = jax.vmap(_cape_column)(pf2, ph2, tin2, rin2)
     return (cape.reshape(flat_shape), cin.reshape(flat_shape),
             klzb.reshape(flat_shape), klcl.reshape(flat_shape))
+
+
+# ==========================================================================
+# Stage 3b — the Betts-Miller adjustment (F90 SBM_convection_scheme L327-389
+# and its helpers). Given the parcel ascent, relaxes T and q toward reference
+# profiles over the convective layer [kLZB, k_surface], with the Frierson
+# "shallower" shallow-convection scheme and enthalpy-conserving deep adjustment.
+# ==========================================================================
+def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
+    """Betts-Miller adjustment for one column. Faithful to F90
+    set_reference_profiles + Pq/Pt + do_deep_convection + do_shallow_convection.
+
+    Returns ``(deltaT, deltaq, rain, convflag, Tref, qref)``. ``deltaT``/
+    ``deltaq`` are increments over the step (the driver divides by ``dt``);
+    ``rain`` is column-integrated (kg/m^2); ``convflag`` is 0 (no CAPE),
+    1 (shallow / inactive) or 2 (deep).
+    """
+    K = Tin.shape[0]
+    ks = K - 1
+    kk = jnp.arange(K)
+    dp_low = p_half[:-1] - p_half[1:]   # p_half[k]   - p_half[k+1]  (< 0)
+    dp_up = p_half[1:] - p_half[:-1]    # p_half[k+1] - p_half[k]    (> 0)
+    below = kk >= kLZB                  # convective layer [kLZB, ks]
+
+    def no_conv(_):
+        # CAPE <= 0: everything set to full model values (F90 L370-372).
+        z = jnp.zeros(K)
+        return z, z, 0.0, 0, Tin, qin
+
+    def with_cape(_):
+        # --- set_reference_profiles (F90 L768) ---
+        Tref = Tp
+        eref = RHBM * p_full * rp / (rp + _EPS)
+        rp_ref = _mixing_ratio(eref, p_full)
+        qref_ref = rp_ref / (1.0 + rp_ref)
+        qref = jnp.where(below, qref_ref, qin)
+        # zero out above the LZB: levels [0, max(kLZB,1)-1] -> environment
+        kk_top = jnp.maximum(kLZB, 1) - 1
+        above = kk <= kk_top
+        Tref = jnp.where(above, Tin, Tref)
+        qref = jnp.where(above, qin, qref)
+
+        # --- Pq / Pt (F90 L715, L741) ---
+        deltaq = jnp.where(below, -(qin - qref) * dt / TAU_BM, 0.0)
+        Pq = jnp.sum(jnp.where(below, deltaq * dp_low, 0.0)) / _GRAV
+        deltaT = jnp.where(below, -(Tin - Tref) * dt / TAU_BM, 0.0)
+        Pt = jnp.sum(jnp.where(below, (_CP / (_HLV + _SMALL)) * deltaT * dp_up, 0.0)) / _GRAV
+
+        # ---- deep convection (Pq>0 and Pt>0), F90 do_deep_convection ----
+        def deep(_):
+            def timescale(_):
+                # Pq > Pt: rescale deltaq, cap precip at Pt (F90 L995).
+                invtau_q = Pt / Pq / TAU_BM
+                dq = jnp.where(below, TAU_BM * invtau_q * deltaq, deltaq)
+                return deltaT, dq, Pt, Tref
+            def tref_shift(_):
+                # Pq <= Pt: enthalpy-conserving uniform Tref shift (F90 L960);
+                # deltaq is unchanged, precip stays Pq.
+                deltak = -jnp.sum(jnp.where(below, (deltaT + (_HLV / _CP) * deltaq) * dp_up, 0.0)) \
+                    / (p_half[ks + 1] - p_half[kLZB])
+                dT = jnp.where(below, deltaT + deltak, deltaT)
+                Tr = jnp.where(below, Tref + deltak * TAU_BM / dt, Tref)
+                return dT, deltaq, Pq, Tr
+            dT, dq, rain, Tr = jax.lax.cond(Pq > Pt, timescale, tref_shift, None)
+            return dT, dq, rain, 2, Tr, qref
+
+        # ---- shallow convection (Pt>0, Pq<=0), F90 do_shallow_convection ----
+        def shallow(_):
+            # level_of_zero_precip: integrate precip downward until it turns
+            # positive (F90 L845). Carry (k, Pql).
+            def cond(state):
+                k, Pql = state
+                return (Pql < 0.0) & (k <= ks)
+
+            def body(state):
+                k, Pql = state
+                Pql = Pql - deltaq[k] * dp_low[k] / _GRAV
+                return k + 1, Pql
+
+            k_end, Pql = jax.lax.while_loop(cond, body, (kLZB, Pq))
+            k_top = k_end - 1
+            found = Pql > 0.0
+
+            # above the zero-precip level: reset to environment (F90 L882)
+            zmask = (kk >= kLZB) & (kk <= k_top - 1) & (k_top > kLZB)
+            Tref_s = jnp.where(zmask, Tin, Tref)
+            qref_s = jnp.where(zmask, qin, qref)
+            dT_s = jnp.where(zmask, 0.0, deltaT)
+            dq_s = jnp.where(zmask, 0.0, deltaq)
+
+            def found_branch(_):
+                # change_Tref_LZB_shallowconv (F90 L892): scale the top layer so
+                # precip is exactly zero, then shift Tref to conserve enthalpy.
+                c = Pql * _GRAV / (dq_s[k_top] * dp_up[k_top])
+                dq2 = jnp.where(kk == k_top, dq_s * c, dq_s)
+                dT2 = jnp.where(kk == k_top, dT_s * c, dT_s)
+                topmask = kk >= k_top   # [k_top, ks]
+                deltak = jnp.sum(jnp.where(topmask, dT2 * dp_low, 0.0)) \
+                    / (p_half[ks + 1] - p_half[k_top])
+                apply = topmask & (k_top != ks)
+                dT3 = jnp.where(apply, dT2 + deltak, dT2)
+                Tr3 = jnp.where(apply, Tref_s + deltak * TAU_BM / dt, Tref_s)
+                return dT3, dq2, Tr3, qref_s
+
+            def notfound_branch(_):
+                # no zero-precip level: reset the (rest of the) convective layer.
+                # k_top==kLZB -> just the surface; else [kLZB, k_top].
+                m_surf = kk == ks
+                m_layer = (kk >= kLZB) & (kk <= k_top)
+                m = jnp.where(k_top == kLZB, m_surf, m_layer)
+                Tr = jnp.where(m, Tin, Tref_s)
+                qr = jnp.where(m, qin, qref_s)
+                dT = jnp.where(m, 0.0, dT_s)
+                dq = jnp.where(m, 0.0, dq_s)
+                return dT, dq, Tr, qr
+
+            dT, dq, Tr, qr = jax.lax.cond(found, found_branch, notfound_branch, None)
+            return dT, dq, 0.0, 1, Tr, qr   # shallow: no precip
+
+        def deep_or_shallow(_):
+            return jax.lax.cond(Pt > 0.0, shallow, inactive, None)
+
+        def inactive(_):
+            # CAPE>0 but Pt<=0: no adjustment, convflag stays 1 (F90 L360-364).
+            z = jnp.zeros(K)
+            return z, z, 0.0, 1, Tin, qin
+
+        return jax.lax.cond((Pq > 0.0) & (Pt > 0.0), deep, deep_or_shallow, None)
+
+    return jax.lax.cond(CAPE > 0.0, with_cape, no_conv, None)
+
+
+def qe_moist_convection(Tin: Array, qin: Array, p_full: Array, p_half: Array,
+                        dt: float):
+    """Frierson simplified Betts-Miller convection (full scheme).
+
+    Faithful port of ``qe_moist_convection`` (``SIMPLE_BETTS_MILLER``): the
+    parcel-ascent CAPE diagnosis (stage 3a) followed by the Betts-Miller
+    adjustment (stage 3b). Relaxes temperature and humidity toward post-ascent
+    reference profiles over the convective layer.
+
+    Args:
+        Tin, qin, p_full: ``(..., K)`` temperature [K], specific humidity
+            [kg/kg], full-level pressure [Pa].
+        p_half: ``(..., K+1)`` half-level pressure [Pa].
+        dt: physics timestep [s] (Betts-Miller uses ``tau_bm = 7200`` s).
+
+    Returns:
+        ``(rain, deltaT, deltaq, convflag)`` — column-integrated convective rain
+        ``(...)`` [kg/m^2]; the temperature/humidity **increments** ``(..., K)``
+        over the step (the Isca driver divides these by ``dt`` to get rates);
+        and ``convflag`` ``(...)`` (0 none / 1 shallow / 2 deep).
+
+    Note: the internal reference profiles ``Tref``/``qref`` are diagnostics not
+    returned here. ``qref`` in particular carries an irreducible knife-edge: for
+    a shallow column whose convective layer is a net moisture *sink*, the
+    "level of zero precipitation" test compares a quantity that is exactly zero
+    in exact arithmetic (``Pq - Pq``), so the ~1e-7 ``sat_vapor_pres`` es
+    deviation can flip the discrete ``found`` branch and change ``qref`` at the
+    surface. The returned tendencies are unaffected (both branches coincide
+    there), which is why ``deltaT``/``deltaq``/``rain`` match Isca to ~1e-7.
+    """
+    rin = qin / (1.0 - qin)
+    flat = Tin.shape[:-1]
+    K = Tin.shape[-1]
+    tin2 = Tin.reshape(-1, K)
+    qin2 = qin.reshape(-1, K)
+    rin2 = rin.reshape(-1, K)
+    pf2 = p_full.reshape(-1, K)
+    ph2 = p_half.reshape(-1, K + 1)
+
+    def one(pf, ph, t, q, r):
+        cape, _cin, klzb, _klcl, Tp, rp = _cape_column(pf, ph, t, r)
+        dT, dq, rain, cflag, _Tref, _qref = _adjust_column(
+            pf, ph, t, q, Tp, rp, klzb, cape, dt)
+        return rain, dT, dq, cflag
+
+    rain, dT, dq, cflag = jax.vmap(one)(pf2, ph2, tin2, qin2, rin2)
+    return (rain.reshape(flat), dT.reshape(flat + (K,)),
+            dq.reshape(flat + (K,)), cflag.reshape(flat))

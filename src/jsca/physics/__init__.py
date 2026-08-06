@@ -9,7 +9,7 @@ from .hs_forcing import (
     rayleigh_damping,
 )
 from .lscale_cond import lscale_cond
-from .qe_moist_convection import convective_cape
+from .qe_moist_convection import convective_cape, qe_moist_convection
 from .sat_vapor_pres import (
     saturation_specific_humidity,
     saturation_specific_humidity_and_deriv,
@@ -27,4 +27,5 @@ __all__ = [
     "saturation_specific_humidity_and_deriv",
     "lscale_cond",
     "convective_cape",
+    "qe_moist_convection",
 ]
