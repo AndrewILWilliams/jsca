@@ -21,12 +21,13 @@ from __future__ import annotations
 import argparse
 import time
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
 import jsca  # noqa: F401
 from jsca.grid.transforms import area_weighted_global_mean
-from jsca.model import build_held_suarez, initial_state, integrate
+from jsca.model import build_held_suarez, initial_state, integrate, step
 from jsca.model.held_suarez import _grid_from_spectral
 
 
@@ -72,23 +73,33 @@ def main() -> None:
             raise SystemExit(f"unstable at day {d0 + chunk} (max|u|={umax}, nan={isnan})")
     print(f"spun up {args.spinup_days} d in {(time.time() - t0) / 60:.1f} min", flush=True)
 
-    # Sample in 30-day chunks and reduce each to a monthly zonal-mean member
-    # immediately. Reducing inside the loop (not stacking all daily 4-D fields in
-    # one scan) keeps peak memory ~one month of daily samples instead of the whole
-    # window -- the full-window stack OOM-kills the process at T42L25.
+    # Sample with a per-day advance and reduce each day on the host into monthly
+    # zonal-mean sums. Crucially, advance one day with a *compiled lax.scan* (built
+    # once) rather than ``integrate(..., sample_every=spd)``: that helper unrolls
+    # ``sample_every`` steps as a Python loop inside the scan body, so at spd=288
+    # T42L25 it compiles a 288x-unrolled graph that OOM-kills the process. A
+    # per-day host sync (240 of them) is negligible against 288 steps of compute.
+    @jax.jit
+    def advance_day(state):
+        s, _ = jax.lax.scan(lambda s, _: (step(m, s), None), state, None, length=spd)
+        return s
+
     nmonths = args.sample_days // 30
     u_members, t_members = [], []  # each (K, nlat), zonal+time mean
     ke_daily = []  # area-weighted global mean of 0.5<u^2> per day (a scalar series)
     for mo in range(nmonths):
-        st, (u_s, t_s, _ps_s) = integrate(m, st, 30 * spd, sample_every=spd)
-        u_s = np.asarray(u_s)  # (30, nlat, nlon, K)
-        t_s = np.asarray(t_s)
-        u_members.append(np.moveaxis(u_s.mean(axis=(0, 2)), -1, 0))  # (K, nlat)
-        t_members.append(np.moveaxis(t_s.mean(axis=(0, 2)), -1, 0))
-        ke_daily.extend(
-            float(area_weighted_global_mean(tf, jnp.mean(0.5 * u_s[d] ** 2, -1)))
-            for d in range(u_s.shape[0])
-        )
+        usum = np.zeros((m.dyn.num_levels, m.nlat))
+        tsum = np.zeros_like(usum)
+        for _d in range(30):
+            st = advance_day(st)
+            u, _v, t, _ps = _grid_from_spectral(m, *st, 1)  # (nlat, nlon, K)
+            usum += np.moveaxis(np.asarray(u.mean(axis=1)), -1, 0)  # zonal mean -> (K, nlat)
+            tsum += np.moveaxis(np.asarray(t.mean(axis=1)), -1, 0)
+            ke_daily.append(
+                float(area_weighted_global_mean(tf, jnp.mean(0.5 * u**2, -1)))
+            )
+        u_members.append(usum / 30.0)
+        t_members.append(tsum / 30.0)
         print(f"  month {mo + 1}/{nmonths} sampled "
               f"({(time.time() - t0) / 60:.1f} min)", flush=True)
 
