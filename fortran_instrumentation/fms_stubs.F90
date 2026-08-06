@@ -22,6 +22,8 @@ real, public, parameter :: hlf     = 3.34e5       ! constants.F90 L124
 real, public, parameter :: hls     = hlv + hlf    ! constants.F90 L125
 real, public, parameter :: tfreeze = 273.16       ! constants.F90 L126
 real, public, parameter :: es0     = 1.0          ! constants.F90 DEF_ES0 (L119)
+real, public, parameter :: vonkarm = 0.40         ! constants.F90 L239
+real, public, parameter :: dens_h2o = 1000.0      ! constants.F90 L122
 real, public :: orbital_period = 365.25*8.640000e4  ! EARTH_ORBITAL_PERIOD (mutable; hs_forcing_nml member)
 real, public :: solar_const = 1368.22             ! constants.F90 L260
 end module constants_mod
