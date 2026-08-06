@@ -24,6 +24,10 @@ real, public, parameter :: tfreeze = 273.16       ! constants.F90 L126
 real, public, parameter :: es0     = 1.0          ! constants.F90 DEF_ES0 (L119)
 real, public, parameter :: vonkarm = 0.40         ! constants.F90 L239
 real, public, parameter :: dens_h2o = 1000.0      ! constants.F90 L122
+real, public, parameter :: cp_ocean = 3989.24495292815  ! constants.F90 L87
+real, public, parameter :: rho0     = 1.035e3     ! constants.F90 L88
+real, public, parameter :: rho_cp   = rho0*cp_ocean     ! constants.F90 L90 (slab-ocean heat cap.)
+real, public, parameter :: kelvin   = 273.15      ! constants.F90 L245
 real, public :: orbital_period = 365.25*8.640000e4  ! EARTH_ORBITAL_PERIOD (mutable; hs_forcing_nml member)
 real, public :: solar_const = 1368.22             ! constants.F90 L260
 end module constants_mod
@@ -32,6 +36,16 @@ module fms_mod
 implicit none
 integer, public, parameter :: FATAL = 2
 integer, public, parameter :: NOTE = 0
+integer, public, parameter :: WARNING = 1
+
+! mixed_layer imports these for restart I/O that never runs in the fixture
+! sandbox (no INPUT restart files); supply the symbols so the `use` resolves.
+interface read_data
+  module procedure read_data_dom, read_data_dom3, read_data_unit
+end interface
+interface write_data
+  module procedure write_data_dom, write_data_dom3
+end interface
 
 contains
 
@@ -87,8 +101,13 @@ integer function stdlog()
   stdlog = 6
 end function stdlog
 
+! Opens a real input.nml for the modules that read their namelist the classic
+! way (e.g. mixed_layer, which has no INTERNAL_FILE_NML path). The driver writes
+! input.nml; a newunit keeps this independent of other fixed units.
 integer function open_namelist_file()
-  open_namelist_file = 10
+  integer :: unit
+  open(newunit=unit, file='input.nml', status='old', action='read')
+  open_namelist_file = unit
 end function open_namelist_file
 
 ! Real file open (I/O plumbing, no numerics). Some modules (e.g.
@@ -151,16 +170,54 @@ subroutine set_domain(domain)
   integer, intent(in) :: domain
 end subroutine set_domain
 
-subroutine read_data(filename, fieldname, data, domain)
+subroutine nullify_domain()
+end subroutine nullify_domain
+
+subroutine field_size(filename, fieldname, siz, domain)
+  character(len=*), intent(in) :: filename, fieldname
+  integer, intent(out) :: siz(:)
+  integer, intent(in), optional :: domain
+  siz = 0
+end subroutine field_size
+
+subroutine read_data_dom(filename, fieldname, data, domain)
   character(len=*), intent(in) :: filename, fieldname
   real, intent(inout) :: data(:,:)
   integer, intent(in) :: domain
-end subroutine read_data
+end subroutine read_data_dom
 
-subroutine write_data(filename, fieldname, data, domain)
+subroutine read_data_dom3(filename, fieldname, data, domain)
+  character(len=*), intent(in) :: filename, fieldname
+  real, intent(inout) :: data(:,:,:)
+  integer, intent(in) :: domain
+end subroutine read_data_dom3
+
+subroutine read_data_unit(unit, data)
+  integer, intent(in) :: unit
+  real, intent(inout) :: data(:,:)
+end subroutine read_data_unit
+
+function lowercase(cs) result(lcs)
+  character(len=*), intent(in) :: cs
+  character(len=len(cs)) :: lcs
+  integer :: k, ia
+  lcs = cs
+  do k = 1, len_trim(cs)
+    ia = iachar(cs(k:k))
+    if (ia >= iachar('A') .and. ia <= iachar('Z')) lcs(k:k) = achar(ia + 32)
+  end do
+end function lowercase
+
+subroutine write_data_dom(filename, fieldname, data, domain)
   character(len=*), intent(in) :: filename, fieldname
   real, intent(in) :: data(:,:)
   integer, intent(in) :: domain
-end subroutine write_data
+end subroutine write_data_dom
+
+subroutine write_data_dom3(filename, fieldname, data, domain)
+  character(len=*), intent(in) :: filename, fieldname
+  real, intent(in) :: data(:,:,:)
+  integer, intent(in) :: domain
+end subroutine write_data_dom3
 
 end module fms_mod
