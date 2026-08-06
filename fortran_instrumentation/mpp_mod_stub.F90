@@ -11,7 +11,7 @@ module mpp_mod
 implicit none
 private
 public :: mpp_sum, mpp_max, mpp_pe, mpp_sync
-public :: input_nml_file
+public :: input_nml_file, mpp_chksum, stdout
 
 ! FMS's internal-file namelist buffer. In the real FMS this holds the whole
 ! input.nml as an array of lines; here the fixture driver allocates and fills it
@@ -35,6 +35,17 @@ end function mpp_pe
 
 subroutine mpp_sync()
 end subroutine mpp_sync
+
+integer function stdout()
+  stdout = 6
+end function stdout
+
+! vert_diff imports mpp_chksum only for its (commented-out) checksum diagnostics;
+! supply the symbol so the `use` resolves. No numerics used.
+integer(8) function mpp_chksum(x)
+  real, intent(in) :: x(:,:,:)
+  mpp_chksum = 0
+end function mpp_chksum
 
 subroutine mpp_sum_i(x)
   integer, intent(inout) :: x
