@@ -213,6 +213,23 @@ def mo_drag(p: MOParams, pt, pt0, z, z0, zt, zq, speed):
     return drag_m, drag_t, drag_q, u_star, b_star
 
 
+def mo_diff(p: MOParams, z, u_star, b_star, ustar_min: float = 1.0e-10):
+    """Height-dependent eddy diffusivities (F90 ``monin_obukhov_diff``).
+
+    Returns ``(k_m, k_h)`` at the heights ``z`` (any shape), broadcasting the
+    per-column ``u_star``/``b_star``. Non-neutral (Frierson): ``k = vonkarm *
+    u_star * z / phi``, with the momentum/heat similarity functions ``phi_m`` /
+    ``phi_t`` evaluated at ``zeta = -vonkarm*b_star*z/u_star^2``.
+    """
+    uss = jnp.maximum(u_star, ustar_min)
+    zeta = -p.vonkarm * b_star * z / (uss * uss)
+    phi_m = _phi_m(zeta, p.rich_crit)
+    phi_h = _phi_t(zeta, p.rich_crit)
+    k_m = p.vonkarm * uss * z / phi_m
+    k_h = p.vonkarm * uss * z / phi_h
+    return k_m, k_h
+
+
 def mo_profile(p: MOParams, zref, zref_t, z, z0, zt, zq, u_star, b_star):
     """Reference-height interpolation ratios (F90 ``monin_obukhov_profile_1d``).
 
