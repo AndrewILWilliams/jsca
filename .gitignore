@@ -27,3 +27,4 @@ fortran_instrumentation/compute_corrections_body.inc
 hs_run.log
 scratchpad_hs_clim.npz
 fortran_instrumentation/dump_sat_vapor_pres_reference
+fortran_instrumentation/dump_lscale_cond_reference

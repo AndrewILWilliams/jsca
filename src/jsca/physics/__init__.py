@@ -8,6 +8,7 @@ from .hs_forcing import (
     newtonian_damping,
     rayleigh_damping,
 )
+from .lscale_cond import lscale_cond
 from .sat_vapor_pres import (
     saturation_specific_humidity,
     saturation_specific_humidity_and_deriv,
@@ -23,4 +24,5 @@ __all__ = [
     "saturation_vapor_pressure",
     "saturation_specific_humidity",
     "saturation_specific_humidity_and_deriv",
+    "lscale_cond",
 ]

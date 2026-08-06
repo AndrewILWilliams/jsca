@@ -11,6 +11,13 @@ module mpp_mod
 implicit none
 private
 public :: mpp_sum, mpp_max, mpp_pe, mpp_sync
+public :: input_nml_file
+
+! FMS's internal-file namelist buffer. In the real FMS this holds the whole
+! input.nml as an array of lines; here the fixture driver allocates and fills it
+! before calling a module's *_init so that `read(input_nml_file, nml=...)` (under
+! -DINTERNAL_FILE_NML) picks up the injected namelist groups. No numerics.
+character(len=256), dimension(:), allocatable :: input_nml_file
 
 interface mpp_sum
   module procedure mpp_sum_i, mpp_sum_r
