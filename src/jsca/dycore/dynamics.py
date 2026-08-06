@@ -99,6 +99,13 @@ def build_dynamics_params(
     radius: float = constants.RADIUS,
     reference_sea_level_press: float = 101325.0,
     vert_coord_option: str = "even_sigma",
+    # uneven_sigma / hybrid stretching (ignored by even_sigma); defaults mirror
+    # compute_vert_coord / Isca's spectral_dynamics_nml.
+    scale_heights: float = 4.0,
+    surf_res: float = 0.1,
+    exponent: float = 2.5,
+    p_press: float = 0.1,
+    p_sigma: float = 0.3,
     vert_difference_option: str = "simmons_and_burridge",
     alpha_implicit: float = 0.5,
     use_implicit: bool = True,
@@ -117,7 +124,9 @@ def build_dynamics_params(
     # concrete arrays keeps ``pressure_variables``' top-level ``bool(pk[0] == 0)``
     # check concrete under jit (a closed-over jnp array is lifted to a tracer).
     pk, bk = compute_vert_coord(
-        vert_coord_option, num_levels, reference_press=reference_sea_level_press
+        vert_coord_option, num_levels, scale_heights=scale_heights, surf_res=surf_res,
+        exponent=exponent, p_press=p_press, p_sigma=p_sigma,
+        reference_press=reference_sea_level_press,
     )
     dpk, dbk = pk[1:] - pk[:-1], bk[1:] - bk[:-1]
 
