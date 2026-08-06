@@ -1,8 +1,8 @@
 """Compare jsca's Held-Suarez climatology against the pinned Isca reference.
 
 Loads the committed Isca monthly members (``hs_isca_members.npz``, 8 x 30-day
-means) and a jsca run (``hs_jsca_run.npz`` from ``bench/run_jsca_held_suarez.py``),
-forms 8 matching jsca monthly members, and runs the Tier-3 equivalence test
+means) and the matching jsca monthly members (``hs_jsca_run.npz`` from
+``bench/run_jsca_held_suarez.py``), and runs the Tier-3 equivalence test
 (:func:`jsca.testing.ensemble_mean_test`): at each (level, latitude) point, is
 jsca's mean within Isca's own month-to-month spread? FDR-controlled across all
 points, with a practical-significance floor.
@@ -19,23 +19,14 @@ import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from scipy import stats
 
 from jsca.testing import ensemble_mean_test
 
 
-def jsca_monthly_members(run: np.lib.npyio.NpzFile) -> tuple[np.ndarray, np.ndarray]:
-    """8 monthly (30-day) zonal-mean members from the daily samples.
-
-    ``u_daily`` is ``(ndays, nlat, nlon, K)`` (level k=0 top). Returns u, T as
-    ``(8, K, nlat)`` to match Isca's ``(members, pfull, lat)``.
-    """
-    u = run["u_daily"].mean(axis=2)  # zonal mean -> (ndays, nlat, K)
-    t = run["t_daily"].mean(axis=2)
-    nd = u.shape[0]
-    nm = nd // 30
-    u = u[: nm * 30].reshape(nm, 30, u.shape[1], u.shape[2]).mean(1)  # (nm, nlat, K)
-    t = t[: nm * 30].reshape(nm, 30, t.shape[1], t.shape[2]).mean(1)
-    return np.moveaxis(u, -1, 1), np.moveaxis(t, -1, 1)  # (nm, K, nlat)
+def stats_mod_ks(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
+    res = stats.ks_2samp(np.ravel(a), np.ravel(b))
+    return float(res.statistic), float(res.pvalue)
 
 
 def main() -> None:
@@ -51,7 +42,9 @@ def main() -> None:
     run = np.load(args.jsca)
     lat, pfull = isca["lat"], isca["pfull"]
     u_ctrl, t_ctrl = isca["u_members"], isca["t_members"]  # (8, K, nlat)
-    u_test, t_test = jsca_monthly_members(run)
+    u_test, t_test = run["u_members"], run["t_members"]  # (nmonths, K, nlat)
+    n = min(u_ctrl.shape[0], u_test.shape[0])  # equal ensemble size for the test
+    u_ctrl, t_ctrl, u_test, t_test = u_ctrl[:n], t_ctrl[:n], u_test[:n], t_test[:n]
     print(f"members: Isca {u_ctrl.shape[0]}, jsca {u_test.shape[0]}")
 
     ru = ensemble_mean_test(u_ctrl, u_test, floor=args.u_floor)
@@ -68,6 +61,11 @@ def main() -> None:
     print(f"Isca jet: max u={uc.max():.1f} m/s ; jsca jet: max u={ut.max():.1f} m/s")
     stats("u", uc, ut, ru, "m/s")
     stats("T", tc, tt, rt, "K")
+    # distributional index: KS on the pooled zonal-mean values across all members
+    ks_u = stats_mod_ks(u_ctrl, u_test)
+    ks_t = stats_mod_ks(t_ctrl, t_test)
+    print(f"KS (pooled zonal-mean distribution): u D={ks_u[0]:.3f} p={ks_u[1]:.2f} ; "
+          f"T D={ks_t[0]:.3f} p={ks_t[1]:.2f}")
 
     # figure: rows = u, T ; cols = Isca, jsca, jsca-Isca
     fig, ax = plt.subplots(2, 3, figsize=(16, 8), sharex=True, sharey=True)

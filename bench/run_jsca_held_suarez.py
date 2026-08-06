@@ -72,20 +72,34 @@ def main() -> None:
             raise SystemExit(f"unstable at day {d0 + chunk} (max|u|={umax}, nan={isnan})")
     print(f"spun up {args.spinup_days} d in {(time.time() - t0) / 60:.1f} min", flush=True)
 
-    # sample daily over the averaging window
-    st, (u_s, t_s, ps_s) = integrate(m, st, args.sample_days * spd, sample_every=spd)
-    u_s = np.asarray(u_s)  # (ndays, nlat, nlon, K)
-    t_s = np.asarray(t_s)
-    ps_s = np.asarray(ps_s)
-    print(f"sampled {args.sample_days} daily fields in {(time.time()-t0)/60:.1f} min total")
+    # Sample in 30-day chunks and reduce each to a monthly zonal-mean member
+    # immediately. Reducing inside the loop (not stacking all daily 4-D fields in
+    # one scan) keeps peak memory ~one month of daily samples instead of the whole
+    # window -- the full-window stack OOM-kills the process at T42L25.
+    nmonths = args.sample_days // 30
+    u_members, t_members = [], []  # each (K, nlat), zonal+time mean
+    ke_daily = []  # area-weighted global mean of 0.5<u^2> per day (a scalar series)
+    for mo in range(nmonths):
+        st, (u_s, t_s, _ps_s) = integrate(m, st, 30 * spd, sample_every=spd)
+        u_s = np.asarray(u_s)  # (30, nlat, nlon, K)
+        t_s = np.asarray(t_s)
+        u_members.append(np.moveaxis(u_s.mean(axis=(0, 2)), -1, 0))  # (K, nlat)
+        t_members.append(np.moveaxis(t_s.mean(axis=(0, 2)), -1, 0))
+        ke_daily.extend(
+            float(area_weighted_global_mean(tf, jnp.mean(0.5 * u_s[d] ** 2, -1)))
+            for d in range(u_s.shape[0])
+        )
+        print(f"  month {mo + 1}/{nmonths} sampled "
+              f"({(time.time() - t0) / 60:.1f} min)", flush=True)
 
     np.savez_compressed(
         args.out,
-        u_daily=u_s, t_daily=t_s, ps_daily=ps_s,
+        u_members=np.array(u_members), t_members=np.array(t_members),  # (nmonths, K, nlat)
+        ke_daily=np.array(ke_daily),
         lat=lat, pfull=ref["pfull"], sigma_full=sigma_full,
-        spinup_days=args.spinup_days, sample_days=args.sample_days,
+        spinup_days=args.spinup_days, sample_days=args.sample_days, dt=args.dt,
     )
-    print(f"saved {args.out}")
+    print(f"saved {args.out} in {(time.time() - t0) / 60:.1f} min", flush=True)
 
 
 if __name__ == "__main__":
