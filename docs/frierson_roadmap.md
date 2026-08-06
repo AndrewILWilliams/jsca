@@ -53,7 +53,8 @@ implicit vertical-diffusion solve.
    - 3a. **CAPE stage** — parcel ascent → CAPE, CIN, LCL/LZB levels. ✅ done (PR #21)
    - 3b. **Betts-Miller adjustment** — reference profiles, Pq/Pt, deep/shallow
      relaxation → `deltaT`/`deltaq`/`rain`/`convflag`. ✅ done ← this PR
-4. `two_stream_gray_rad` — Frierson grey radiation + p2 insolation. ← next
+4. `two_stream_gray_rad` — Frierson grey radiation + p2 insolation. ✅ done ← this PR
+   **Phase A complete.**
 
 **Phase B — surface & boundary layer**
 5. `monin_obukhov` + `surface_flux` (do_simple) — bulk fluxes.
