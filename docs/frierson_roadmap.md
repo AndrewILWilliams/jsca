@@ -68,7 +68,7 @@ implicit vertical-diffusion solve.
    (vert_turb_driver reduces to `diffusivity` + `gust=0`, `z_pbl=h` for Frierson.)
 7. `vert_diff` (`gcm_vert_diff_down/up`) — implicit tridiagonal diffusion + surface coupling. ✅ done ← this PR
    (down/up split validated; the T/q surface coupling is closed by `mixed_layer`, item 8.)
-8. `mixed_layer` — slab ocean.
+8. `mixed_layer` — slab ocean. ✅ done ← this PR
 9. `damping_driver` — Rayleigh sponge.
 
 **Phase C — moist dynamics + assembly**
