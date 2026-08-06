@@ -1,0 +1,121 @@
+diff --git a/src/atmos_spectral/model/spectral_dynamics.F90 b/src/atmos_spectral/model/spectral_dynamics.F90
+index ab2e0b9..14258ca 100644
+--- a/src/atmos_spectral/model/spectral_dynamics.F90
++++ b/src/atmos_spectral/model/spectral_dynamics.F90
+@@ -780,6 +780,8 @@ end subroutine get_initial_fields
+ subroutine spectral_dynamics(Time, psg_final, ug_final, vg_final, tg_final, tracer_attributes, grid_tracers_final, &
+                              time_level_out, dt_psg, dt_ug, dt_vg, dt_tg, dt_tracers, wg_full, p_full, p_half, z_full)
+ 
++use jsca_dump_mod, only: jsca_dump_1d, jsca_dump_2d, jsca_dump_3d, jsca_dump_scalar
++
+ type(time_type),  intent(in) :: Time
+ real, intent(out), dimension(is:, js:      ) :: psg_final
+ real, intent(out), dimension(is:, js:, :   ) :: ug_final, vg_final, tg_final
+@@ -814,6 +816,8 @@ real    :: delta_t
+ !mj error message
+ real    :: extrtmp
+ integer :: ii,jj,kk,i1,j1,k1
++integer, save :: jsca_gstep = 0
++integer, parameter :: jsca_ndump = 40
+ 
+ !st RAW filter implementation
+ complex, dimension(ms:me, ns:ne              ) :: part_filt_ln_ps
+@@ -842,6 +846,46 @@ else
+   call error_mesg('spectral_dynamics','Do not know how to set time pointers when num_time_levels does not equal 2',FATAL)
+ endif
+ 
++! --- jsca fixture dump: initial state (once) + per-step inputs ---
++if (jsca_gstep < jsca_ndump) then
++  if (jsca_gstep == 0) then
++    call jsca_dump_scalar('cfg_num_levels', real(num_levels))
++    call jsca_dump_scalar('cfg_num_steps', real(num_steps))
++    call jsca_dump_scalar('cfg_dt_real', dt_real)
++    call jsca_dump_scalar('cfg_robert_coeff', robert_coeff)
++    call jsca_dump_scalar('cfg_raw_filter_coeff', raw_filter_coeff)
++    call jsca_dump_1d('pk', pk)
++    call jsca_dump_1d('bk', bk)
++    call jsca_dump_1d('coriolis', coriolis)
++    call jsca_dump_2d('surf_geopotential', surf_geopotential)
++    call jsca_dump_scalar('previous0', real(previous))
++    call jsca_dump_scalar('current0', real(current))
++    call jsca_dump_3d('vors_prev_re', real(vors(:,:,:,previous)))
++    call jsca_dump_3d('vors_prev_im', aimag(vors(:,:,:,previous)))
++    call jsca_dump_3d('vors_cur_re',  real(vors(:,:,:,current)))
++    call jsca_dump_3d('vors_cur_im',  aimag(vors(:,:,:,current)))
++    call jsca_dump_3d('divs_prev_re', real(divs(:,:,:,previous)))
++    call jsca_dump_3d('divs_prev_im', aimag(divs(:,:,:,previous)))
++    call jsca_dump_3d('divs_cur_re',  real(divs(:,:,:,current)))
++    call jsca_dump_3d('divs_cur_im',  aimag(divs(:,:,:,current)))
++    call jsca_dump_3d('ts_prev_re', real(ts(:,:,:,previous)))
++    call jsca_dump_3d('ts_prev_im', aimag(ts(:,:,:,previous)))
++    call jsca_dump_3d('ts_cur_re',  real(ts(:,:,:,current)))
++    call jsca_dump_3d('ts_cur_im',  aimag(ts(:,:,:,current)))
++    call jsca_dump_2d('lnps_prev_re', real(ln_ps(:,:,previous)))
++    call jsca_dump_2d('lnps_prev_im', aimag(ln_ps(:,:,previous)))
++    call jsca_dump_2d('lnps_cur_re',  real(ln_ps(:,:,current)))
++    call jsca_dump_2d('lnps_cur_im',  aimag(ln_ps(:,:,current)))
++  endif
++  call jsca_dump_scalar('delta_t', delta_t)
++  call jsca_dump_scalar('prev_eq_cur', merge(1.0, 0.0, previous == current))
++  call jsca_dump_3d('dt_ug', dt_ug)
++  call jsca_dump_3d('dt_vg', dt_vg)
++  call jsca_dump_3d('dt_tg', dt_tg)
++  call jsca_dump_2d('dt_psg', dt_psg)
++endif
++! --- end jsca dump ---
++
+ dt_psg_tmp = dt_psg
+ dt_ug_tmp  = dt_ug
+ dt_vg_tmp  = dt_vg
+@@ -1013,6 +1057,30 @@ call compute_corrections(delta_t, tracer_attributes, p_full)
+ previous = current
+ current  = future
+ 
++! --- jsca fixture dump: output spectral state at new current (= future) ---
++if (jsca_gstep < jsca_ndump) then
++  call jsca_dump_3d('vors_out_re', real(vors(:,:,:,current)))
++  call jsca_dump_3d('vors_out_im', aimag(vors(:,:,:,current)))
++  call jsca_dump_3d('divs_out_re', real(divs(:,:,:,current)))
++  call jsca_dump_3d('divs_out_im', aimag(divs(:,:,:,current)))
++  call jsca_dump_3d('ts_out_re', real(ts(:,:,:,current)))
++  call jsca_dump_3d('ts_out_im', aimag(ts(:,:,:,current)))
++  call jsca_dump_2d('lnps_out_re', real(ln_ps(:,:,current)))
++  call jsca_dump_2d('lnps_out_im', aimag(ln_ps(:,:,current)))
++  ! also dump the PREVIOUS slot (Robert-filtered old current) so a clean
++  ! single-step test has the exact (prev,cur) input pair for the next step
++  call jsca_dump_3d('vors_prevslot_re', real(vors(:,:,:,previous)))
++  call jsca_dump_3d('vors_prevslot_im', aimag(vors(:,:,:,previous)))
++  call jsca_dump_3d('divs_prevslot_re', real(divs(:,:,:,previous)))
++  call jsca_dump_3d('divs_prevslot_im', aimag(divs(:,:,:,previous)))
++  call jsca_dump_3d('ts_prevslot_re', real(ts(:,:,:,previous)))
++  call jsca_dump_3d('ts_prevslot_im', aimag(ts(:,:,:,previous)))
++  call jsca_dump_2d('lnps_prevslot_re', real(ln_ps(:,:,previous)))
++  call jsca_dump_2d('lnps_prevslot_im', aimag(ln_ps(:,:,previous)))
++  jsca_gstep = jsca_gstep + 1
++endif
++! --- end jsca dump ---
++
+ call get_time(Time, seconds, days)
+ seconds = seconds + step_number*int(dt_real/2)
+ Time_diag = set_time(seconds, days)
+@@ -1212,6 +1280,8 @@ end subroutine compute_pressure_gradient
+ 
+ subroutine compute_corrections(delta_t, tracer_attributes, p_full)
+ 
++use jsca_dump_mod, only: jsca_dump_scalar
++
+ real,              intent(in   )               :: delta_t
+ type(tracer_type), intent(inout), dimension(:) :: tracer_attributes
+ real,              intent(in   ), dimension(:,:,:) :: p_full !mj
+@@ -1236,6 +1306,11 @@ if(do_energy_correction) then
+   mean_energy_tmp = mass_weighted_global_integral( &
+           0.5*(ug(:,:,:,future)**2 + vg(:,:,:,future)**2) + cp_air*tg(:,:,:,future), psg(:,:,future))
+   temperature_correction = grav*(mean_energy_previous - mean_energy_tmp)/(cp_air*mean_surf_press_previous)
++  call jsca_dump_scalar('cc_mean_energy_tmp', mean_energy_tmp)
++  call jsca_dump_scalar('cc_temperature_correction', temperature_correction)
++  call jsca_dump_scalar('cc_mass_correction_factor', mass_correction_factor)
++  call jsca_dump_scalar('cc_mean_energy_previous', mean_energy_previous)
++  call jsca_dump_scalar('cc_mean_surf_press_previous', mean_surf_press_previous)
+   tg(:,:,:,future) = tg(:,:,:,future) + temperature_correction
+   if(ms == 0 .and. ns == 0) then
+     ts(0,0,:,future) = ts(0,0,:,future) + sqrt(2.)*temperature_correction
