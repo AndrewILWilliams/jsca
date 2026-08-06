@@ -48,8 +48,11 @@ implicit vertical-diffusion solve.
 
 **Phase A — column thermodynamics (self-contained, easy to fixture)**
 1. `sat_vapor_pres` (do_simple) — es(T), qs(T,p). Foundation for 2, 3, 4. ✅ done (PR #19)
-2. `lscale_cond` (do_simple, do_evap) — large-scale condensation. ✅ done ← this PR
-3. `qe_moist_convection` — simple Betts-Miller. ← next
+2. `lscale_cond` (do_simple, do_evap) — large-scale condensation. ✅ done (PR #20)
+3. `qe_moist_convection` — simple Betts-Miller. Split in two (1190 lines):
+   - 3a. **CAPE stage** — parcel ascent → CAPE, CIN, LCL/LZB levels. ✅ done ← this PR
+   - 3b. **Betts-Miller adjustment** — reference profiles, Pq/Pt, deep/shallow
+     relaxation → `deltaT`/`deltaq`/`rain`/`convflag`. ← next
 4. `two_stream_gray_rad` — Frierson grey radiation + p2 insolation.
 
 **Phase B — surface & boundary layer**
