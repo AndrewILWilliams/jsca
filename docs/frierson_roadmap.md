@@ -56,8 +56,10 @@ implicit vertical-diffusion solve.
 4. `two_stream_gray_rad` — Frierson grey radiation + p2 insolation. ✅ done ← this PR
    **Phase A complete.**
 
-**Phase B — surface & boundary layer**
+**Phase B — surface & boundary layer** ← in progress
 5. `monin_obukhov` + `surface_flux` (do_simple) — bulk fluxes.
+   - 5a. `monin_obukhov` — surface-layer similarity (mo_drag + mo_profile). ✅ done ← this PR
+   - 5b. `surface_flux` (do_simple ocean) — bulk sensible/latent/momentum fluxes. ← next
 6. `diffusivity` / `vert_turb_driver` (do_diffusivity) — K profiles.
 7. `vert_diff` (`gcm_vert_diff_down/up`) — implicit tridiagonal diffusion + surface coupling.
 8. `mixed_layer` — slab ocean.
