@@ -24,6 +24,7 @@ from .two_stream_gray_rad import (
     gray_rad_up,
     two_stream_gray_rad,
 )
+from .vert_diff import TriSurf, vert_diff_down, vert_diff_up
 
 __all__ = [
     "HsForcingParams",
@@ -49,4 +50,7 @@ __all__ = [
     "SurfaceFluxResult",
     "DiffusivityParams",
     "diffusivity",
+    "vert_diff_down",
+    "vert_diff_up",
+    "TriSurf",
 ]

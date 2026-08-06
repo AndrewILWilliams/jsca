@@ -1,5 +1,9 @@
 # Roadmap: the Frierson moist aquaplanet
 
+> **Tracking issue: [#27](https://github.com/AndrewILWilliams/jsca/issues/27)** — the
+> live checklist of module PRs and the definition of done (climatology parity vs
+> Isca). This document is the detailed design; the issue is the progress board.
+
 The dry Held-Suarez core is now validated against Isca. The next milestone is the
 **Frierson (2006) idealized moist aquaplanet**: a moist GCM on a slab-ocean
 aquaplanet with grey radiation, simplified Betts-Miller convection, large-scale
@@ -62,7 +66,8 @@ implicit vertical-diffusion solve.
    - 5b. `surface_flux` (do_simple ocean) — bulk sensible/latent/momentum fluxes. ✅ done ← this PR
 6. `diffusivity` / `vert_turb_driver` (do_diffusivity) — K profiles. ✅ done ← this PR
    (vert_turb_driver reduces to `diffusivity` + `gust=0`, `z_pbl=h` for Frierson.)
-7. `vert_diff` (`gcm_vert_diff_down/up`) — implicit tridiagonal diffusion + surface coupling.
+7. `vert_diff` (`gcm_vert_diff_down/up`) — implicit tridiagonal diffusion + surface coupling. ✅ done ← this PR
+   (down/up split validated; the T/q surface coupling is closed by `mixed_layer`, item 8.)
 8. `mixed_layer` — slab ocean.
 9. `damping_driver` — Rayleigh sponge.
 
