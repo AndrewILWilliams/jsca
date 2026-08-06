@@ -16,6 +16,7 @@ from .sat_vapor_pres import (
     saturation_specific_humidity_and_deriv,
     saturation_vapor_pressure,
 )
+from .surface_flux import SurfaceFluxResult, surface_flux
 from .two_stream_gray_rad import (
     GrayRadParams,
     gray_rad_down,
@@ -42,4 +43,6 @@ __all__ = [
     "MOParams",
     "mo_drag",
     "mo_profile",
+    "surface_flux",
+    "SurfaceFluxResult",
 ]
