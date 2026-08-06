@@ -60,7 +60,8 @@ implicit vertical-diffusion solve.
 5. `monin_obukhov` + `surface_flux` (do_simple) — bulk fluxes.
    - 5a. `monin_obukhov` — surface-layer similarity (mo_drag + mo_profile). ✅ done (PR #24)
    - 5b. `surface_flux` (do_simple ocean) — bulk sensible/latent/momentum fluxes. ✅ done ← this PR
-6. `diffusivity` / `vert_turb_driver` (do_diffusivity) — K profiles. ← next
+6. `diffusivity` / `vert_turb_driver` (do_diffusivity) — K profiles. ✅ done ← this PR
+   (vert_turb_driver reduces to `diffusivity` + `gust=0`, `z_pbl=h` for Frierson.)
 7. `vert_diff` (`gcm_vert_diff_down/up`) — implicit tridiagonal diffusion + surface coupling.
 8. `mixed_layer` — slab ocean.
 9. `damping_driver` — Rayleigh sponge.
