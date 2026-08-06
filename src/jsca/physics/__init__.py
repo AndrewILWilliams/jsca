@@ -1,6 +1,11 @@
 """Physical parameterizations: the Held-Suarez forcing and the moist-physics
 column schemes (starting with saturation vapor pressure for the Frierson port)."""
 
+from .damping_driver import (
+    DampingDriverParams,
+    damping_driver_init,
+    rayleigh_sponge,
+)
 from .diffusivity import DiffusivityParams, diffusivity
 from .hs_forcing import (
     HsForcingParams,
@@ -56,4 +61,7 @@ __all__ = [
     "TriSurf",
     "MixedLayerParams",
     "mixed_layer_step",
+    "DampingDriverParams",
+    "damping_driver_init",
+    "rayleigh_sponge",
 ]
