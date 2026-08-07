@@ -155,13 +155,30 @@ comparison.)
 With the water-conservation and `damping_order` fixes the mean state matches Isca
 closely at T21 — every field within ~1 K / ~0.1 mm/day. Remaining:
 
-1. **Statistical test** — feed the equilibrium climatologies to the
-   `jsca.testing` ensemble-mean comparison (as the dry HS core uses) for a
-   quantitative within-sampling-parity verdict, ideally with a short ensemble to
-   estimate internal variability.
-2. *(Optional)* a T42 both-fixes headline refresh — expected to match the T21
-   result; not required to establish parity.
+1. ~~Statistical test~~ ✅ **done — parity confirmed.**
 
-The like-for-like set-up, the 0.94-0.9996 pattern agreement, the near-zero mean
-biases, and the machine-precision per-step physics are the foundation. Until the
-statistical verdict is in, #27 stays open.
+## Statistical parity — the #27 closer
+
+The Tier-3 test the dry HS core uses (`jsca.testing.ensemble_mean_test`): build
+**8 monthly (30-day) ensemble members** per model from the equilibrated T21
+window, and at each (level, latitude) point ask whether jsca's ensemble mean lies
+within Isca's own month-to-month internal variability — FDR-controlled across all
+points, with a per-field practical floor. Run:
+`python scripts/compare_frierson_ensemble.py`.
+
+![statistical parity](figures/frierson_ensemble_parity.png)
+
+| field | bias (jsca−Isca) | fail_fraction (FDR 5% + floor) |
+|---|:---:|:---:|
+| `u` | −0.32 m/s | **0.0 %** |
+| `T` | +0.05 K | **0.0 %** |
+| `sphum` | +0.001 g/kg | **0.0 %** |
+| `t_surf` | +0.13 K | **0.0 %** |
+| precipitation | −0.000 mm/day | **0.0 %** |
+
+**Zero points fail on any field** — every jsca−Isca difference sits inside Isca's
+internal variability (no stipple anywhere in the figure). This is within-sampling
+statistical parity: the definition of done for #27.
+
+*(Optional follow-up: a T42 both-fixes headline refresh — expected to match the
+T21 result; not required for parity.)*

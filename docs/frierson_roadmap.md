@@ -125,8 +125,10 @@ implicit vertical-diffusion solve.
       real (not spin-up) polar residual (cold poles, warm tropics, weak
       high-latitude winds); with order 4 the T21 polar-cap biases collapse
       (t_surf −4.1→−0.02 K, tropics +1.8→+0.1 K, polar wind ≈90 % closed).
-      **Remaining for the #27 close: refresh the T42 headline with both fixes +
-      the `jsca.testing` ensemble statistical verdict.**
+      **#27 statistical parity reached** ✅: the Tier-3 `ensemble_mean_test`
+      (8×30-day members per model, T21) returns fail_fraction **0.0 %** on every
+      field (u, T, sphum, t_surf, precip) — every jsca−Isca difference within
+      Isca's internal variability. Item 11c and #27 are done.
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward

@@ -35,8 +35,8 @@ FIELDS = {
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--isca", default="/tmp/isca_t21_members_ctrl.npz")
-    ap.add_argument("--jsca", default="/tmp/jsca_t21_members_ctrl.npz")
+    ap.add_argument("--isca", default="baseline/reference/frierson_isca_members_t21.npz")
+    ap.add_argument("--jsca", default="baseline/reference/frierson_jsca_members_t21.npz")
     ap.add_argument("--fig", default="docs/figures/frierson_ensemble_parity.png")
     args = ap.parse_args()
 
