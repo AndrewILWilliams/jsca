@@ -195,14 +195,23 @@ def step(m: FriersonModel, state, delta_t: float | None = None, wave_matrix=None
 
     ph_p, lph_p, pf_p, lpf_p = pressure_variables(dyn.pk, dyn.bk, ps_p, dyn.vert_difference_option)
     ph_c, lph_c, pf_c, lpf_c = pressure_variables(dyn.pk, dyn.bk, ps_c, dyn.vert_difference_option)
-    # geopotential height above the surface (aquaplanet: surf geopotential = 0)
-    phi_full, _ = compute_geopotential(dyn.pk, t_p, lph_c, lpf_c, dyn.surf_geopotential)
+    # geopotential heights above the surface (aquaplanet: surf geopotential = 0).
+    # The full AND half level heights are needed: the boundary-layer diffusivity's
+    # Richardson profile references z_half, so a midpoint approximation is not
+    # faithful (verified against Isca: it corrupts the diffusion tendency).
+    phi_full, phi_half = compute_geopotential(dyn.pk, t_p, lph_c, lpf_c, dyn.surf_geopotential)
     z_full_c = phi_full / constants.GRAV
+    z_half_c = phi_half / constants.GRAV
 
     # --- column physics on the previous level ---
+    # gust is Isca's stateful vert_turb gustiness; Frierson sets constant_gust=0, so
+    # the steady-state value the diffusivity path uses is 0 (the cold-start step-1
+    # transient value of 1.0 m/s is not reproduced -- a documented start-up
+    # difference, negligible for the climatology).
+    gust = m.phys.gust_const * jnp.ones(m.lat2d.shape)
     phys = idealized_moist_phys(
         m.phys, m.lat2d, m.lon2d, u_p, v_p, t_p, q_p, ph_p, pf_p, ph_c, pf_c, z_full_c,
-        t_surf, dtl, m.dt)
+        z_half_c, t_surf, gust, dtl, m.dt)
 
     # reference means for the mass/energy corrections (previous advanced by physics)
     mean_sp_prev = area_weighted_global_mean(tf, ps_p)
