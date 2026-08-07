@@ -105,6 +105,31 @@ python scripts/plot_frierson_evolution.py baseline/reference/frierson_jsca_evolu
     docs/figures/frierson_t21_year_evolution.png baseline/reference/frierson_isca_evolution_t21.npz
 ```
 
+## The residual polar bias was over-strong spectral damping (also fixed)
+
+With the cold bias gone, one residual remained visible: at T21 the poles were
+~4 K too cold, the tropics ~2 K too warm, and the high-latitude near-surface
+winds far too weak (0.9 vs 5.7 m/s) — a **too-weak-poleward-transport** signature.
+It was *not* spin-up: both models' polar caps were equilibrated (jsca trend
++0.3 K/60 d), so jsca simply settled colder.
+
+The cause was a second config mismatch: Isca's `frierson_test_case` sets
+**`damping_order = 4`** (∇⁸ hyperdiffusion), but `build_frierson` was inheriting
+the Isca *default* order **2** (∇⁴). With `damping_option='resolution_dependent'`
+(`damping ∝ (eigen/eigen_max)^order`), order 2 damps the energy-containing eddies
+far harder than order 4 — throttling the eddy heat/momentum flux. Setting
+`build_frierson` to Isca's order 4 (T21, both equilibrated):
+
+| T21 polar cap (equilibrium) | pre-fix | post-fix | Isca |
+|---|:---:|:---:|:---:|
+| polar `t_surf` | 250.6 K | **254.64 K** | 254.66 K (Δ **−0.02**) |
+| tropical `t_surf` | 302.2 K | **300.52 K** | 300.40 K (Δ **+0.12**) |
+| polar near-surface `u` | 0.88 m/s | **5.34 m/s** | 5.75 m/s (Δ −0.41) |
+
+The polar cold bias (−4.1 → **−0.02 K**), tropical warm bias (+1.8 → **+0.1 K**),
+and weak polar winds (≈90 % closed) all collapse. The T42 matched climatology is
+being re-run with both fixes to refresh the headline figure/numbers above.
+
 ## Performance — like-for-like (single-core CPU, no GPU)
 
 | | grid | per-step |
@@ -121,11 +146,12 @@ comparison.)
 
 ## What closing item 11c / #27 still needs
 
-With the water-conservation fix the mean state matches Isca to ≤1 K and
-≤0.1 mm/day. Remaining:
+With the water-conservation and `damping_order` fixes the mean state matches Isca
+closely — cold bias, tropical warm bias and polar winds all near zero. Remaining:
 
-1. **The residual `u` bias** (+1.9 m/s, a near-surface high-latitude feature) —
-   the one field still visibly off; worth tracing.
+1. **Refresh the T42 headline** with both fixes (re-run in progress) and confirm
+   the small residuals (e.g. the near-surface high-latitude `u`) shrink as they do
+   at T21.
 2. **Statistical test** — feed the equilibrium climatologies to the
    `jsca.testing` ensemble-mean comparison (as the dry HS core uses) for a
    quantitative within-sampling-parity verdict, ideally with a short ensemble to

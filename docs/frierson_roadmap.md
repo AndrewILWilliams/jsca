@@ -119,9 +119,14 @@ implicit vertical-diffusion solve.
       0.9975 (−0.86 K), t_surf 0.9991 (−0.69 K), jet **38.0 vs 38.1 m/s**.
       Validated with a 1-year **T21 jsca-vs-Isca** run from the same IC (precip on
       together ~day 5-10, no cold overshoot, last-100-day T diff −0.01 K).
-      Performance 178 ms/step at 64×128 (~1.6× faster than single-core Isca).
-      **Remaining for the #27 close: the residual +1.9 m/s `u` bias and the
-      `jsca.testing` ensemble statistical verdict.**
+      Performance 178 ms/step at 64×128 (~1.6× faster than single-core Isca). A
+      second config mismatch — `build_frierson` inherited `damping_order=2` vs
+      Isca's Frierson `damping_order=4` — was over-damping the eddies, giving a
+      real (not spin-up) polar residual (cold poles, warm tropics, weak
+      high-latitude winds); with order 4 the T21 polar-cap biases collapse
+      (t_surf −4.1→−0.02 K, tropics +1.8→+0.1 K, polar wind ≈90 % closed).
+      **Remaining for the #27 close: refresh the T42 headline with both fixes +
+      the `jsca.testing` ensemble statistical verdict.**
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward
