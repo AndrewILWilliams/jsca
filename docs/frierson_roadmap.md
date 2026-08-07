@@ -108,21 +108,20 @@ implicit vertical-diffusion solve.
       and matched jsca to machine precision (momentum ~1e-15; T/q at the
       `sat_vapor_pres` deviation ~1e-9). ✅ done. Caught & fixed two wiring bugs
       (real geopotential `z_half`; the `gust=1.0` initial gustiness).
-    - 11c. **Frierson run + climatology vs Isca** — 🔶 **equilibrium benchmark
-      done** (`docs/frierson_climatology.md`): T42 jsca `FriersonModel` runs vs a
-      real Isca Frierson run, at two windows. At **200 days (days 100-200, near
-      equilibrium)** the eddy field has matured and the dynamics now agree — u
-      corr 0.97 (double jet 24.5 vs 38.1 m/s), precip corr 0.93 (ITCZ + storm
-      tracks), T/q corr 0.99, t_surf corr 0.9993 — a large improvement on the
-      60-day spin-up snapshot (u 0.73, precip 0.77). A roughly uniform ~7-10 K
-      **cold offset** remains (t_surf −6.8 K, T −10.3 K), largest where radiative
-      restoring is weakest; spin-up diagnostics show the poles/upper atmosphere
-      still cooling at day 100 → likely incomplete high-latitude equilibration
-      (per-step physics is machine-precision validated, excluding a physics bug).
-      A longer 300-day run is under way to confirm. jsca runs ~1.4×/grid-point
-      faster than single-core Isca on CPU (358 ms/step T42). **Full statistical
-      parity (the #27 closer) still needs the cold-offset resolved + the
-      `jsca.testing` ensemble verdict.**
+    - 11c. **Frierson run + climatology vs Isca** — 🔶 **mean-state parity
+      reached** (`docs/frierson_climatology.md`): like-for-like T42 (Isca's 64×128
+      grid + Isca's exact IC). A bug in the **water-conservation correction**
+      (reference omitted the physics moisture source, deleting evaporation each
+      step — `spectral_dynamics.F90` L1332-1333) had starved the atmosphere of
+      moisture, delaying precip ~45 days and driving a ~9 K cold overshoot. Fixed;
+      the fix removed the whole "cold bias". Post-fix matched climatology (days
+      200-300): q corr 0.9996 (bias +0.02 g/kg), precip 0.9954 (−0.06 mm/day), T
+      0.9975 (−0.86 K), t_surf 0.9991 (−0.69 K), jet **38.0 vs 38.1 m/s**.
+      Validated with a 1-year **T21 jsca-vs-Isca** run from the same IC (precip on
+      together ~day 5-10, no cold overshoot, last-100-day T diff −0.01 K).
+      Performance 178 ms/step at 64×128 (~1.6× faster than single-core Isca).
+      **Remaining for the #27 close: the residual +1.9 m/s `u` bias and the
+      `jsca.testing` ensemble statistical verdict.**
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward

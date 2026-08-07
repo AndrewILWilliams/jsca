@@ -11,10 +11,8 @@ regenerates each; `matched` is the one below.
 
 ![jsca vs Isca like-for-like climatology](figures/frierson_climatology_matched.png)
 
-> ⚠️ **This figure and the results table below predate the water-conservation fix
-> described later on this page** (they show the −5.6 K / −9.1 K cold bias that the
-> fix removes). They are being regenerated; the set-up description is still
-> current. See "The cold bias was a bug" below for the corrected picture.
+This figure is the **post-fix** result (see "The cold bias was a bug" below): jets,
+temperature, humidity and precipitation all sit essentially on top of Isca's.
 
 ## Matched set-up (what "same" means here)
 
@@ -33,30 +31,33 @@ The IC is ported faithfully with Fortran citations in
 state's exact zonal symmetry through MPI-domain round-off, which float64 jsca
 cannot reproduce, so it seeds the perturbation explicitly.
 
-## Results (zonal-mean; jsca days 200-300, Isca days 100-200)
+## Results (zonal-mean; jsca days 200-300, Isca days 100-200; post-fix)
 
 | field | correlation | RMSE | bias (jsca−Isca) |
 |-------|:-----------:|:----:|:----------------:|
-| surface temperature `t_surf` | **0.9989** | 5.8 K | −5.6 K |
-| specific humidity `q(lat,p)` | **0.997** | 1.6 g/kg | −0.9 g/kg |
-| temperature `T(lat,p)` | **0.997** | 9.4 K | −9.1 K |
-| precipitation | **0.976** | 1.8 mm/day | −1.2 mm/day |
-| zonal wind `u(lat,p)` | **0.940** | 3.7 m/s | +0.5 m/s |
+| specific humidity `q(lat,p)` | **0.9996** | 0.14 g/kg | +0.02 g/kg |
+| precipitation | **0.9954** | 0.40 mm/day | −0.06 mm/day |
+| temperature `T(lat,p)` | **0.9975** | 2.1 K | −0.86 K |
+| surface temperature `t_surf` | **0.9991** | 1.8 K | −0.69 K |
+| zonal wind `u(lat,p)` | **0.942** | 4.0 m/s | +1.9 m/s |
 
-jsca reproduces the **double eddy-driven jet** (peak 28.6 vs Isca 38.1 m/s), the
-**ITCZ** precipitation peak, and the **midlatitude storm-track rain** at ±40°.
-Spatial pattern correlations are 0.94-0.999.
+jsca reproduces the **double eddy-driven jet** (peak **38.0 vs Isca 38.1 m/s**),
+the **ITCZ** precipitation peak, and the **midlatitude storm-track rain** at ±40°
+— all essentially on top of Isca. This is close to statistical parity for the
+mean state; the biases are ≤1 K in temperature and ≤0.1 mm/day in precip, at or
+near the `sat_vapor_pres` documented-deviation level.
 
-Matching the grid and IC (vs the earlier 86×172 / placeholder-IC run) improved
-precipitation (corr 0.93 → **0.98**), temperature and humidity (0.99 → **0.997**),
-strengthened the jet (24.5 → **28.6 m/s**), and **reduced the cold bias**
-(`t_surf` −6.8 → **−5.6 K**, `T` −10.3 → **−9.1 K**).
+The water-conservation fix (below) is what got here: it removed the −9.1 K / −5.6 K
+cold bias (now −0.86 K / −0.69 K), corrected the humidity and precip biases (to
++0.02 g/kg and −0.06 mm/day), and restored the jet strength (28.6 → **38.0 m/s**).
+The residual `u` bias (+1.9 m/s, a near-surface high-latitude feature) is the main
+thing left to chase.
 
 ## The cold bias was a bug — the water-conservation source term (now fixed)
 
-> **The matched-climatology figure and numbers above predate this fix and are
-> being regenerated;** the −5.6 K / −9.1 K "cold bias" was a genuine bug, not
-> incomplete equilibration. This section is the fix and its validation.
+> The results above are **post-fix**. The −5.6 K / −9.1 K "cold bias" earlier
+> reported was a genuine bug, not incomplete equilibration. This section is the
+> fix and its validation.
 
 Comparing the jsca and Isca global-mean *trajectories* from the **same** initial
 condition exposed the cause. jsca's precipitation did not switch on for ~45 days
@@ -120,13 +121,16 @@ comparison.)
 
 ## What closing item 11c / #27 still needs
 
-1. **Run the drift out** — a longer integration (or later averaging window) to
-   confirm the cold offset damps toward zero, or to isolate any small residual.
+With the water-conservation fix the mean state matches Isca to ≤1 K and
+≤0.1 mm/day. Remaining:
+
+1. **The residual `u` bias** (+1.9 m/s, a near-surface high-latitude feature) —
+   the one field still visibly off; worth tracing.
 2. **Statistical test** — feed the equilibrium climatologies to the
    `jsca.testing` ensemble-mean comparison (as the dry HS core uses) for a
-   quantitative within-sampling-parity verdict.
+   quantitative within-sampling-parity verdict, ideally with a short ensemble to
+   estimate internal variability.
 
-The like-for-like set-up, the 0.94-0.999 pattern agreement, the machine-precision
-per-step physics, and the demonstrated convergence toward Isca are the
-foundation. Until the drift is run out and the statistical verdict is in, #27
-stays open.
+The like-for-like set-up, the 0.94-0.9996 pattern agreement, the near-zero mean
+biases, and the machine-precision per-step physics are the foundation. Until the
+statistical verdict is in, #27 stays open.
