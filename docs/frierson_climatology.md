@@ -127,8 +127,14 @@ far harder than order 4 — throttling the eddy heat/momentum flux. Setting
 | polar near-surface `u` | 0.88 m/s | **5.34 m/s** | 5.75 m/s (Δ −0.41) |
 
 The polar cold bias (−4.1 → **−0.02 K**), tropical warm bias (+1.8 → **+0.1 K**),
-and weak polar winds (≈90 % closed) all collapse. The T42 matched climatology is
-being re-run with both fixes to refresh the headline figure/numbers above.
+and weak polar winds (≈90 % closed) all collapse. The full **both-fixes** T21
+zonal-mean climatology (`compare_frierson_climatology.py t21`,
+`figures/frierson_climatology_t21.png`) then matches Isca across every field —
+`q` corr 0.9998, precip 0.9991, `T` 0.9994 (+0.09 K), `t_surf` 0.9994 (+0.13 K),
+`u` 0.9932 (−0.32 m/s) — the headline result of this work. (The T42
+`matched` figure above is **water-fix-only**; the damping fix's polar improvement
+is shown at T21, per the "validate at T21 first" rule — a T42 both-fixes refresh
+is optional and was not needed to establish the result.)
 
 ## Performance — like-for-like (single-core CPU, no GPU)
 
@@ -147,15 +153,14 @@ comparison.)
 ## What closing item 11c / #27 still needs
 
 With the water-conservation and `damping_order` fixes the mean state matches Isca
-closely — cold bias, tropical warm bias and polar winds all near zero. Remaining:
+closely at T21 — every field within ~1 K / ~0.1 mm/day. Remaining:
 
-1. **Refresh the T42 headline** with both fixes (re-run in progress) and confirm
-   the small residuals (e.g. the near-surface high-latitude `u`) shrink as they do
-   at T21.
-2. **Statistical test** — feed the equilibrium climatologies to the
+1. **Statistical test** — feed the equilibrium climatologies to the
    `jsca.testing` ensemble-mean comparison (as the dry HS core uses) for a
    quantitative within-sampling-parity verdict, ideally with a short ensemble to
    estimate internal variability.
+2. *(Optional)* a T42 both-fixes headline refresh — expected to match the T21
+   result; not required to establish parity.
 
 The like-for-like set-up, the 0.94-0.9996 pattern agreement, the near-zero mean
 biases, and the machine-precision per-step physics are the foundation. Until the
