@@ -114,6 +114,13 @@ def build_frierson(
     num_levels = len(FRIERSON_BK) - 1
     nlat = nlat or (2 * num_fourier + 2)
     nlon = nlon or (4 * num_fourier + 4)
+    # Frierson's spectral_dynamics_nml sets damping_order = 4 (del^8), NOT the Isca
+    # default of 2 (del^4). Order 2 damps the energy-containing eddies far more
+    # strongly than order 4 (with damping_option='resolution_dependent', damping
+    # ~ (eigen/eigen_max)^order, so a lower order means more damping at
+    # intermediate wavenumbers), which weakens the eddy heat/momentum transport
+    # and gives a cold-pole / warm-tropics / too-weak high-latitude-wind bias.
+    dyn_kwargs.setdefault("damping_order", 4)
     dyn = build_dynamics_params(
         num_fourier, nlat, nlon, num_levels,
         pk=FRIERSON_PK, bk=FRIERSON_BK, **dyn_kwargs)
