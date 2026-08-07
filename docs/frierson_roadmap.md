@@ -108,14 +108,21 @@ implicit vertical-diffusion solve.
       and matched jsca to machine precision (momentum ~1e-15; T/q at the
       `sat_vapor_pres` deviation ~1e-9). ✅ done. Caught & fixed two wiring bugs
       (real geopotential `z_half`; the `gust=1.0` initial gustiness).
-    - 11c. **Frierson run + climatology vs Isca** — 🔶 **first benchmark done**
-      (`docs/frierson_climatology.md`): a T42 60-day jsca `FriersonModel` run vs a
-      real Isca Frierson run. The thermodynamic mean state matches (t_surf corr
-      0.998, q 0.95, T 0.92); the eddy-driven jet/precip lag because jsca cold-
-      starts isothermal (no initial baroclinicity) and 60 days is short. jsca runs
-      ~1.4×/grid-point faster than single-core Isca on CPU. **Full statistical
-      parity (the #27 closer) still needs equilibrium (multi-hundred-day) runs** —
-      ideally on jsca's GPU target — fed to the `jsca.testing` ensemble test.
+    - 11c. **Frierson run + climatology vs Isca** — 🔶 **equilibrium benchmark
+      done** (`docs/frierson_climatology.md`): T42 jsca `FriersonModel` runs vs a
+      real Isca Frierson run, at two windows. At **200 days (days 100-200, near
+      equilibrium)** the eddy field has matured and the dynamics now agree — u
+      corr 0.97 (double jet 24.5 vs 38.1 m/s), precip corr 0.93 (ITCZ + storm
+      tracks), T/q corr 0.99, t_surf corr 0.9993 — a large improvement on the
+      60-day spin-up snapshot (u 0.73, precip 0.77). A roughly uniform ~7-10 K
+      **cold offset** remains (t_surf −6.8 K, T −10.3 K), largest where radiative
+      restoring is weakest; spin-up diagnostics show the poles/upper atmosphere
+      still cooling at day 100 → likely incomplete high-latitude equilibration
+      (per-step physics is machine-precision validated, excluding a physics bug).
+      A longer 300-day run is under way to confirm. jsca runs ~1.4×/grid-point
+      faster than single-core Isca on CPU (358 ms/step T42). **Full statistical
+      parity (the #27 closer) still needs the cold-offset resolved + the
+      `jsca.testing` ensemble verdict.**
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward
