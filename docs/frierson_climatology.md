@@ -11,6 +11,11 @@ regenerates each; `matched` is the one below.
 
 ![jsca vs Isca like-for-like climatology](figures/frierson_climatology_matched.png)
 
+> ⚠️ **This figure and the results table below predate the water-conservation fix
+> described later on this page** (they show the −5.6 K / −9.1 K cold bias that the
+> fix removes). They are being regenerated; the set-up description is still
+> current. See "The cold bias was a bug" below for the corrected picture.
+
 ## Matched set-up (what "same" means here)
 
 | | Isca | jsca (matched) |
@@ -47,45 +52,57 @@ precipitation (corr 0.93 → **0.98**), temperature and humidity (0.99 → **0.9
 strengthened the jet (24.5 → **28.6 m/s**), and **reduced the cold bias**
 (`t_surf` −6.8 → **−5.6 K**, `T` −10.3 → **−9.1 K**).
 
-## The cold bias is incomplete equilibration — jsca vs Isca spin-up
+## The cold bias was a bug — the water-conservation source term (now fixed)
 
-A roughly uniform cold offset remains — `t_surf` −5.6 K, `T` −9.1 K. Overlaying
-the jsca and Isca global-mean **trajectories** (both started from the *same*
-initial condition, so this is apples-to-apples) settles what it is:
+> **The matched-climatology figure and numbers above predate this fix and are
+> being regenerated;** the −5.6 K / −9.1 K "cold bias" was a genuine bug, not
+> incomplete equilibration. This section is the fix and its validation.
 
-![global-mean evolution, jsca vs Isca](figures/frierson_spinup_evolution.png)
+Comparing the jsca and Isca global-mean *trajectories* from the **same** initial
+condition exposed the cause. jsca's precipitation did not switch on for ~45 days
+(Isca rains by ~day 10), and its global-mean temperature overshot to ~239 K
+(Isca bottoms at ~252 K). Instrumenting the water budget showed the smoking gun:
+**surface evaporation ran at a healthy ~3.7 mm/day, yet column water never
+accumulated — ~97 % of the evaporated water was vanishing every step.**
 
-- **Isca equilibrates fast.** Its surface warms monotonically 285 → 287.4 K and
-  is flat by ~day 25; global-mean `T` settles to ~252 K and precip to ~4.6 mm/day
-  by ~day 100. No cold overshoot.
-- **jsca equilibrates slowly and overshoots cold/dry.** From the same 264 K start
-  the column plunges to `gm_T` ≈ 239 K (day 85) and the surface dips to ≈279 K
-  (grey radiation cools the column faster than the slowly-building moist processes
-  warm it), then both **recover — but are still climbing at day 300** (`gm_T`
-  +1.2 K/50 d, `gm_tsurf` +0.7 K/50 d). Precip is near-zero until ~day 45, then
-  rises steadily and is still short of Isca's value at day 300.
+The culprit is the global water-conservation correction. Isca sets its reference
+to the previous water **plus the physics moisture source**,
+`mean_water_previous = ⟨q_prev + Δt·dt_qg_physics⟩` (`spectral_dynamics.F90`
+L1332-1333), so the correction removes only spectral-transport/truncation drift.
+jsca used bare `q_prev`, so the correction restored water to the *pre-evaporation*
+total every step, **deleting the entire evaporation source**. Starved of
+moisture, the atmosphere got no latent heating and radiatively overshot cold —
+the "cold bias." (The fix is one term; jsca's *energy* reference already advanced
+by the physics tendency, and the water line had simply omitted the match.)
 
-So jsca is converging toward the *same* equilibrium Isca reached, on a much
-longer timescale, and the reported climatology (days 200-300, right of the dotted
-line) is sampled **mid-recovery** — which is exactly the sign and rough size of
-the residual cold/dry bias. The most visible signature is the **slow moisture
-spin-up**: jsca barely rains for the first ~6 weeks, so its atmosphere loses the
-early latent heating Isca's gets, deepening the cold excursion into a cold/dry
-transient it then slowly climbs out of.
+### Validation: 1-year evolution at T21, jsca vs a real Isca T21 run
 
-This is consistent with the per-step column physics being validated against Isca
-to machine precision (`tests/test_idealized_moist_phys_fixtures.py`: radiation
-1e-18, momentum 1e-15, thermodynamics at the `sat_vapor_pres` deviation ~1e-9),
-which excludes a per-step physics error — the difference is in the *transient
-approach*, not the per-step tendencies. Two things would sharpen the match, both
-follow-ups:
+After the fix, jsca and a real pinned-Isca `frierson_test_case` run at **T21
+(64×32)**, both integrated **one full year from the same IC**, track each other
+throughout:
 
-1. **Integrate longer** (or average a later window) so the drift damps out.
-2. **Warm-start** closer to equilibrium to skip the cold overshoot entirely.
+![jsca vs Isca T21 1-year evolution](figures/frierson_t21_year_evolution.png)
 
-A small residual offset from an accumulated dynamical-core difference cannot be
-fully excluded until the drift is run out, but the evolution curve makes
-incomplete equilibration the dominant cause.
+- **Precip switches on together** (~day 5-10) and settles at ~4.5 mm/day.
+- **No cold overshoot** — global-mean `T` follows Isca down to ~252 K.
+- **Equilibrium (last 100 days) global means:**
+
+| field | Isca | jsca | diff |
+|---|:---:|:---:|:---:|
+| temperature `T` | 252.1 K | 252.1 K | **−0.01 K** |
+| precipitation | 4.65 mm/day | 4.53 mm/day | −0.12 mm/day |
+| column water | 2.57 g/kg | 2.80 g/kg | +0.23 g/kg |
+| surface `t_surf` | 288.2 K | 288.8 K | +0.66 K |
+
+The ~9 K column / ~5.6 K surface cold bias is **gone** (now −0.01 K / +0.66 K).
+Regenerate with:
+
+```
+python scripts/run_frierson_climatology.py          # jsca T42 matched run
+python scripts/extract_isca_evolution.py <atmos_daily.nc> baseline/reference/frierson_isca_evolution_t21.npz
+python scripts/plot_frierson_evolution.py baseline/reference/frierson_jsca_evolution_t21.npz \
+    docs/figures/frierson_t21_year_evolution.png baseline/reference/frierson_isca_evolution_t21.npz
+```
 
 ## Performance — like-for-like (single-core CPU, no GPU)
 
