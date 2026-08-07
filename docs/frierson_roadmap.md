@@ -74,11 +74,17 @@ implicit vertical-diffusion solve.
 **Phase B complete.**
 
 **Phase C — moist dynamics + assembly** ← in progress
-10. Moist spectral core — `sphum` as a prognostic tracer (grid advection +
-    `water_borrowing`, both partly ported); `four_in_one` tracer handling; the
-    **global water-conservation correction** (`compute_corrections`, grid-tracer +
-    MiMA pressure-limit path). ✅ water correction done ← this PR; grid tracer
-    advection assembly remains.
+10. Moist spectral core — `sphum` as a prognostic **grid** tracer.
+    - 10a. Global **water-conservation correction** (`compute_corrections`,
+      grid-tracer + MiMA pressure-limit path). ✅ done
+    - 10b. **Grid tracer time-step** (`update_tracers` grid branch: physics
+      tendency + `a_grid_horiz_advection` + `vert_advection` + Robert/RAW filter,
+      incl. the L1248 dead-store quirk). ✅ done ← this PR (validated with
+      `second_centered`; scheme-agnostic assembly).
+    - 10c. **PPM vertical advection** (`finite_volume_parabolic`) in
+      `vert_advection` — Frierson's production tracer vertical scheme; the one
+      remaining kernel. `update_grid_tracer` takes the scheme as an arg, so it
+      slots in unchanged. ← **next**
 11. `idealized_moist_phys` assembly + the Frierson run + climatology validation
     vs Isca (`jsca.testing`).
 

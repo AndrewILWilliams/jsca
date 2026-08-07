@@ -42,6 +42,7 @@ from .spectral_dynamics import (
     energy_correction,
     four_in_one,
     mass_correction,
+    update_grid_tracer,
     water_correction,
 )
 from .vert_advection import (
@@ -100,6 +101,7 @@ __all__ = [
     "mass_correction",
     "energy_correction",
     "water_correction",
+    "update_grid_tracer",
     "DynamicsParams",
     "build_dynamics_params",
     "compute_tendencies",
