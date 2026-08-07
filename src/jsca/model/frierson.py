@@ -181,8 +181,9 @@ def _grid_from_spectral(m: FriersonModel, vors, divs, ts, ln_ps, slot):
     return _to_last(u_l), _to_last(v_l), t, ps
 
 
-def step(m: FriersonModel, state, delta_t: float | None = None, wave_matrix=None):
-    """One moist leapfrog step. ``state = (vors, divs, ts, ln_ps, qg, t_surf)``."""
+def _step_full(m: FriersonModel, state, delta_t: float | None = None, wave_matrix=None):
+    """One moist leapfrog step, returning ``(new_state, precip)``. ``step`` wraps
+    this and drops ``precip``; the climatology integration keeps it."""
     vors, divs, ts, ln_ps, qg, t_surf = state
     prev, cur, fut = 0, 1, 0
     dyn, tf = m.dyn, m.dyn.transforms
@@ -252,7 +253,13 @@ def step(m: FriersonModel, state, delta_t: float | None = None, wave_matrix=None
     # roll slots (new previous = old current; new current = future)
     roll = lambda a: jnp.stack([a[..., cur], a[..., fut]], axis=-1)  # noqa: E731
     qg = jnp.stack([q_cur_new, q_fut], axis=-1)
-    return (roll(vors), roll(divs), roll(ts), roll(ln_ps), qg, phys.t_surf)
+    new_state = (roll(vors), roll(divs), roll(ts), roll(ln_ps), qg, phys.t_surf)
+    return new_state, phys.precip
+
+
+def step(m: FriersonModel, state, delta_t: float | None = None, wave_matrix=None):
+    """One moist leapfrog step. ``state = (vors, divs, ts, ln_ps, qg, t_surf)``."""
+    return _step_full(m, state, delta_t, wave_matrix)[0]
 
 
 def integrate(m: FriersonModel, state, n_steps: int, cold_start: bool = False):
@@ -264,3 +271,38 @@ def integrate(m: FriersonModel, state, n_steps: int, cold_start: bool = False):
         n_steps -= 1
     state, _ = jax.lax.scan(lambda s, _: (jstep(s), None), state, None, length=n_steps)
     return state
+
+
+def integrate_climatology(m: FriersonModel, state, spinup_steps: int, avg_steps: int,
+                          cold_start: bool = True):
+    """Integrate a spin-up then accumulate the time-mean climatology over the
+    averaging window. Returns ``(state, clim)`` where ``clim`` is a dict of
+    time-mean grid fields ``(nlat, nlon[, K])``: ``ucomp``, ``vcomp``, ``temp``,
+    ``sphum`` (all at the current level), ``ps``, ``t_surf``, and ``precip``
+    (kg/m^2/s). Everything runs inside ``lax.scan`` (no host sync in the loop)."""
+    if cold_start:
+        state = jax.jit(lambda s: step(m, s, m.dt, m.wave_matrix_cold))(state)
+        spinup_steps = max(spinup_steps - 1, 0)
+
+    jstep = jax.jit(lambda s: step(m, s))
+    state, _ = jax.lax.scan(lambda s, _: (jstep(s), None), state, None, length=spinup_steps)
+
+    def diag(s):
+        vors, divs, ts, ln_ps, qg, t_surf = s
+        u, v, t, ps = _grid_from_spectral(m, vors, divs, ts, ln_ps, 1)
+        return {"ucomp": u, "vcomp": v, "temp": t, "sphum": qg[..., 1],
+                "ps": ps, "t_surf": t_surf}
+
+    def body(carry, _):
+        s, acc = carry
+        s2, precip = _step_full(m, s)
+        d = diag(s2)
+        d["precip"] = precip
+        acc = {k: acc[k] + d[k] for k in acc}
+        return (s2, acc), None
+
+    acc0 = {**{k: jnp.zeros_like(v) for k, v in diag(state).items()},
+            "precip": jnp.zeros(m.lat2d.shape)}
+    (state, acc), _ = jax.lax.scan(body, (state, acc0), None, length=avg_steps)
+    clim = {k: np.asarray(v) / avg_steps for k, v in acc.items()}
+    return state, clim
