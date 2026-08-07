@@ -103,11 +103,19 @@ implicit vertical-diffusion solve.
       ✅ done ← this PR (the whole Frierson model runs end-to-end; stability
       smoke-tested). Caught & fixed a PPM `w=0` (0/0) robustness bug the unit
       fixture couldn't reach.
-    - 11c. **Frierson run + climatology vs Isca** — needs a pinned Isca Frierson
-      reference (a full Isca build + multi-year run, as `baseline/reference/`
-      holds for the dry HS core). An instrumented-Isca **step fixture** (like the
-      dry `spectral_dynamics_step` one) is what turns 11a/11b's smoke tests into
-      machine-precision gates; both need Isca infra outside this port.
+    - 11a fidelity gate. **Column driver validated against a real Isca step** —
+      built + ran the pinned Isca Frierson at T42, instrumented the physics step,
+      and matched jsca to machine precision (momentum ~1e-15; T/q at the
+      `sat_vapor_pres` deviation ~1e-9). ✅ done. Caught & fixed two wiring bugs
+      (real geopotential `z_half`; the `gust=1.0` initial gustiness).
+    - 11c. **Frierson run + climatology vs Isca** — 🔶 **first benchmark done**
+      (`docs/frierson_climatology.md`): a T42 60-day jsca `FriersonModel` run vs a
+      real Isca Frierson run. The thermodynamic mean state matches (t_surf corr
+      0.998, q 0.95, T 0.92); the eddy-driven jet/precip lag because jsca cold-
+      starts isothermal (no initial baroclinicity) and 60 days is short. jsca runs
+      ~1.4×/grid-point faster than single-core Isca on CPU. **Full statistical
+      parity (the #27 closer) still needs equilibrium (multi-hundred-day) runs** —
+      ideally on jsca's GPU target — fed to the `jsca.testing` ensemble test.
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward
