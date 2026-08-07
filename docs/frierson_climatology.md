@@ -47,28 +47,38 @@ precipitation (corr 0.93 → **0.98**), temperature and humidity (0.99 → **0.9
 strengthened the jet (24.5 → **28.6 m/s**), and **reduced the cold bias**
 (`t_surf` −6.8 → **−5.6 K**, `T` −10.3 → **−9.1 K**).
 
-## The cold bias is incomplete equilibration (not a fixed offset)
+## The cold bias is incomplete equilibration — jsca vs Isca spin-up
 
-A roughly uniform cold offset remains — `t_surf` −5.6 K, `T` −9.1 K. The spin-up
-time series settles the question of *what* it is:
+A roughly uniform cold offset remains — `t_surf` −5.6 K, `T` −9.1 K. Overlaying
+the jsca and Isca global-mean **trajectories** (both started from the *same*
+initial condition, so this is apples-to-apples) settles what it is:
 
-![global-mean evolution](figures/frierson_spinup_evolution.png)
+![global-mean evolution, jsca vs Isca](figures/frierson_spinup_evolution.png)
 
-From the 264 K isothermal start the global mean **overshoots cold** (grey
-radiation cools the column faster than convection and surface fluxes warm it),
-bottoming near day 85 (`gm_T` ≈ 239 K, `gm_tsurf` ≈ 279 K), then **recovers
-slowly and is still warming at day 300** — `gm_tsurf` +0.7 K / 50 days, `gm_T`
-+1.2 K / 50 days, `gm_precip` still rising. **The averaging window (days 200-300,
-right of the dotted line) is itself still on the warming ramp**, so the reported
-climatology is sampled below jsca's eventual equilibrium — which is exactly the
-sign and rough magnitude of the residual cold bias.
+- **Isca equilibrates fast.** Its surface warms monotonically 285 → 287.4 K and
+  is flat by ~day 25; global-mean `T` settles to ~252 K and precip to ~4.6 mm/day
+  by ~day 100. No cold overshoot.
+- **jsca equilibrates slowly and overshoots cold/dry.** From the same 264 K start
+  the column plunges to `gm_T` ≈ 239 K (day 85) and the surface dips to ≈279 K
+  (grey radiation cools the column faster than the slowly-building moist processes
+  warm it), then both **recover — but are still climbing at day 300** (`gm_T`
+  +1.2 K/50 d, `gm_tsurf` +0.7 K/50 d). Precip is near-zero until ~day 45, then
+  rises steadily and is still short of Isca's value at day 300.
 
-So the bias is a **slow approach to equilibrium**, and the trend is unambiguously
-*toward* Isca. This is consistent with the per-step column physics being
-validated against Isca to machine precision
-(`tests/test_idealized_moist_phys_fixtures.py`: radiation 1e-18, momentum 1e-15,
-thermodynamics at the `sat_vapor_pres` deviation ~1e-9), which excludes a
-per-step physics error. Two things would sharpen the match, both follow-ups:
+So jsca is converging toward the *same* equilibrium Isca reached, on a much
+longer timescale, and the reported climatology (days 200-300, right of the dotted
+line) is sampled **mid-recovery** — which is exactly the sign and rough size of
+the residual cold/dry bias. The most visible signature is the **slow moisture
+spin-up**: jsca barely rains for the first ~6 weeks, so its atmosphere loses the
+early latent heating Isca's gets, deepening the cold excursion into a cold/dry
+transient it then slowly climbs out of.
+
+This is consistent with the per-step column physics being validated against Isca
+to machine precision (`tests/test_idealized_moist_phys_fixtures.py`: radiation
+1e-18, momentum 1e-15, thermodynamics at the `sat_vapor_pres` deviation ~1e-9),
+which excludes a per-step physics error — the difference is in the *transient
+approach*, not the per-step tendencies. Two things would sharpen the match, both
+follow-ups:
 
 1. **Integrate longer** (or average a later window) so the drift damps out.
 2. **Warm-start** closer to equilibrium to skip the cold overshoot entirely.
