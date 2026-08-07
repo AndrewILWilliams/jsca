@@ -30,10 +30,19 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# tag: (description, figure-name, isca-reference, jsca-reference)
 WINDOWS = {
-    "60day": ("days 30-end of a 60-day run (spin-up snapshot)", "frierson_climatology.png"),
-    "200day": ("days 100-200 of a 200-day run (near equilibrium)",
-               "frierson_climatology_equilibrium.png"),
+    "60day": ("days 30-end of a 60-day run (spin-up snapshot), jsca on an 86x172 grid",
+              "frierson_climatology.png",
+              "frierson_isca_zonalmean_t42_60day.npz", "frierson_jsca_zonalmean_t42_60day.npz"),
+    "200day": ("days 100-200, jsca on an 86x172 grid",
+               "frierson_climatology_equilibrium.png",
+               "frierson_isca_zonalmean_t42_200day.npz", "frierson_jsca_zonalmean_t42_200day.npz"),
+    # like-for-like: jsca on Isca's exact 64x128 grid with Isca's matched initial
+    # condition (days 200-300 mean). Reuses the 64-lat Isca 200-day reference.
+    "matched": ("jsca on Isca's 64x128 grid + matched IC (days 200-300)",
+                "frierson_climatology_matched.png",
+                "frierson_isca_zonalmean_t42_200day.npz", "frierson_jsca_zonalmean_t42x64.npz"),
 }
 
 fields = {  # name: (npz-key, scale, unit)
@@ -45,15 +54,10 @@ fields = {  # name: (npz-key, scale, unit)
 }
 
 
-def load(tag):
-    I = np.load(ROOT / "baseline" / "reference" / f"frierson_isca_zonalmean_t42_{tag}.npz")
-    J = np.load(ROOT / "baseline" / "reference" / f"frierson_jsca_zonalmean_t42_{tag}.npz")
-    return I, J
-
-
 def run(tag):
-    desc, figname = WINDOWS[tag]
-    I, J = load(tag)
+    desc, figname, isca_ref, jsca_ref = WINDOWS[tag]
+    ref = ROOT / "baseline" / "reference"
+    I, J = np.load(ref / isca_ref), np.load(ref / jsca_ref)
     lat_i, pfull = I["lat"], I["pfull"]
     lat_j = J["lat_jsca"]
 
