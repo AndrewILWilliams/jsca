@@ -241,7 +241,16 @@ def _step_full(m: FriersonModel, state, delta_t: float | None = None, wave_matri
     energy_p = (0.5 * ((u_p + phys.dt_ug * dtl) ** 2 + (v_p + phys.dt_vg * dtl) ** 2)
                 + constants.CP_AIR * (t_p + phys.dt_tg * dtl))
     mean_en_prev = mass_weighted_global_integral(tf, dyn.pk, dyn.bk, energy_p, ps_p)
-    mean_water_prev = mass_weighted_global_integral(tf, dyn.pk, dyn.bk, q_p, ps_p)
+    # The water-conservation reference must include the physics moisture source
+    # (evaporation - convective/large-scale condensation), exactly as Isca:
+    #   mean_water_previous = <q_prev + delta_t * dt_tracers_physics>
+    # (spectral_dynamics.F90 L1332-1333, with dt_tracers still the physics tendency
+    # at the initialize_corrections call, L849-851). Using bare q_p makes the
+    # correction restore water to the pre-evaporation total every step, deleting the
+    # entire surface-evaporation source -> the atmosphere never moistens and precip
+    # never spins up. (Matches the energy reference above, which advances by dtl.)
+    mean_water_prev = mass_weighted_global_integral(
+        tf, dyn.pk, dyn.bk, q_p + phys.dt_qg * dtl, ps_p)
 
     # --- spectral dynamics (physics forcing folded in) + tracer diagnostics ---
     dvor, ddiv, dts, dlnps, (wg, ug_c, vg_c, ph_c2) = compute_tendencies(
