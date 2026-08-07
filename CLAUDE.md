@@ -114,6 +114,17 @@ press_and_geopot), `jsca.testing` (Tier-3 equivalence stats), constants.
    climatology + ≥0.5×-Fortran performance gate (Fortran numbers:
    `baseline/reference/timings_sandbox.json`; node numbers pending).
 
+## Climatology validation resolution
+
+**Always validate a climatology-affecting change at T21 first, before any higher
+resolution.** A 1-year T21 run (32×64) is ~35 min; the equivalent T42 (64×128) is
+~2.5 h. Both jsca and the pinned Isca `frierson_test_case` run cheaply at T21, so
+the jsca-vs-Isca comparison (same IC, same window; `run_frierson_climatology.py`,
+`extract_isca_evolution.py`, `plot_frierson_evolution.py`,
+`compare_frierson_climatology.py`) should be confirmed at T21 and only then re-run
+at T42 to refresh the headline. This is how the water-conservation and
+`damping_order` fixes were validated (`docs/frierson_climatology.md`).
+
 ## Performance
 
 `bench/bench_transforms.py` is the pattern: jit + `lax.scan`, report per-step
