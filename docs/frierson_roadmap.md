@@ -82,11 +82,20 @@ implicit vertical-diffusion solve.
       incl. the L1248 dead-store quirk). ✅ done ← this PR (validated with
       `second_centered`; scheme-agnostic assembly).
     - 10c. **PPM vertical advection** (`finite_volume_parabolic`) in
-      `vert_advection` — Frierson's production tracer vertical scheme; the one
-      remaining kernel. `update_grid_tracer` takes the scheme as an arg, so it
-      slots in unchanged. ← **next**
+      `vert_advection` — Frierson's production tracer vertical scheme. ✅ done ←
+      this PR (parabolic reconstruction + Colella-Woodward limiter + Courant>1
+      departure-point integral, validated to machine precision; the Courant>1
+      walk is a loop-free `searchsorted`). `update_grid_tracer` slots it in via
+      its `scheme` argument.
+
+    **Item 10 (moist spectral core) complete.**
 11. `idealized_moist_phys` assembly + the Frierson run + climatology validation
-    vs Isca (`jsca.testing`).
+    vs Isca (`jsca.testing`). ← **next: the final assembly**
+
+Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
+for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward
+`ke`, reading `dz(ke+1)` out of bounds. jsca clamps at `ke` (intended
+behaviour); Frierson's sub-unity vertical Courant number never reaches that path.
 
 Note: Frierson's `sphum` is a **grid** tracer (Isca `field_table`
 `numerical_representation='grid'`), so the moist spectral core uses the grid
