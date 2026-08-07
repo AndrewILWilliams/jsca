@@ -29,6 +29,7 @@ day = d.variables["time"][:]
 temp = d.variables["temp"][:]            # (time, pfull, lat, lon)
 precip = d.variables["precipitation"][:]  # (time, lat, lon), kg/m^2/s
 tsurf = d.variables["t_surf"][:]          # (time, lat, lon)
+sphum = d.variables["sphum"][:] if "sphum" in d.variables else None  # (time, pfull, lat, lon)
 d.close()
 
 w = np.cos(np.deg2rad(lat))
@@ -43,6 +44,9 @@ def gm2d(f):                               # (time, lat, lon) -> (time,)
 gm_T = gm2d((temp * dbk[None, :, None, None]).sum(axis=1))
 gm_precip = gm2d(precip) * 86400.0
 gm_tsurf = gm2d(tsurf)
-np.savez(out, day=np.asarray(day), gm_T=gm_T, gm_precip=gm_precip, gm_tsurf=gm_tsurf)
+extra = {}
+if sphum is not None:
+    extra["gm_sphum"] = gm2d((sphum * dbk[None, :, None, None]).sum(axis=1)) * 1e3  # g/kg
+np.savez(out, day=np.asarray(day), gm_T=gm_T, gm_precip=gm_precip, gm_tsurf=gm_tsurf, **extra)
 print(f"wrote {out} (day {day[0]:.1f}-{day[-1]:.1f}; "
       f"gm_T {gm_T[0]:.1f}->{gm_T[-1]:.1f}, gm_tsurf {gm_tsurf[0]:.1f}->{gm_tsurf[-1]:.1f})")
