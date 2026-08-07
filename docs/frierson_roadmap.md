@@ -97,9 +97,12 @@ implicit vertical-diffusion solve.
       flux → grey-rad up → sponge → diffusivity → vert-diff down → mixed layer →
       vert-diff up. ✅ done ← this PR (stability/conservation smoke-tested; each
       component already golden-validated).
-    - 11b. **Moist spectral stepping** — extend the model step with the `sphum`
-      grid tracer (`update_grid_tracer` + `water_correction`) and the `t_surf`
-      slab-ocean state; integrate 11a into the leapfrog loop. ← **next**
+    - 11b. **Moist spectral stepping** (`jsca.model.frierson.FriersonModel`) —
+      folds 11a into the spectral leapfrog loop with `sphum` as a grid tracer
+      (`update_grid_tracer` + PPM + `water_correction`) and a slab-ocean `t_surf`.
+      ✅ done ← this PR (the whole Frierson model runs end-to-end; stability
+      smoke-tested). Caught & fixed a PPM `w=0` (0/0) robustness bug the unit
+      fixture couldn't reach.
     - 11c. **Frierson run + climatology vs Isca** — needs a pinned Isca Frierson
       reference (a full Isca build + multi-year run, as `baseline/reference/`
       holds for the dry HS core). An instrumented-Isca **step fixture** (like the
