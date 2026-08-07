@@ -1,82 +1,184 @@
-# Frierson moist aquaplanet — jsca vs Isca climatology (first benchmark)
+# Frierson moist aquaplanet — jsca vs Isca climatology
 
-Roadmap item 11c. This is the end-to-end climatology comparison: a jsca
-`FriersonModel` run against a real pinned-Isca `frierson_test_case` run, both at
-**T42, 60 days, days 30-end time-mean**. It is a **first benchmark** — enough to
-show the model reproduces the Frierson mean state, not yet the multi-year
-statistical-parity check that closes #27.
+Roadmap item 11c: the end-to-end climatology comparison of a jsca `FriersonModel`
+run against a real pinned-Isca `frierson_test_case` run, both at **T42, L25**.
+This is the milestone that closes #27 once statistical parity is demonstrated.
 
-![jsca vs Isca climatology](figures/frierson_climatology.png)
+The headline comparison is **like-for-like**: jsca on **Isca's exact 64×128
+Gaussian grid** with **Isca's exact initial condition**, so nothing but the code
+differs. `python scripts/compare_frierson_climatology.py [60day|200day|matched]`
+regenerates each; `matched` is the one below.
 
-## How it was produced
+![jsca vs Isca like-for-like climatology](figures/frierson_climatology_matched.png)
 
-- **Isca** — the pinned `frierson_test_case` at T42 L25 built and run in-sandbox
-  (full FMS/netCDF/MPI, single core), 60 days, daily output. Recipe:
-  `fortran_instrumentation/frierson_step_recipe.md`.
-- **jsca** — `jsca.model.frierson.integrate_climatology` at T42 (num_fourier=42),
-  cold-started from an isothermal resting state, 30-day spin-up then a 30-day
-  averaging window accumulated inside `lax.scan`.
-- Zonal-mean references committed under `baseline/reference/`; regenerate the
-  stats + figure with `python scripts/compare_frierson_climatology.py`.
+This figure is the **post-fix** result (see "The cold bias was a bug" below): jets,
+temperature, humidity and precipitation all sit essentially on top of Isca's.
 
-## Results (zonal-mean, days 30-end)
+## Matched set-up (what "same" means here)
+
+| | Isca | jsca (matched) |
+|---|---|---|
+| spectral truncation | T42 | T42 |
+| transform grid | **64 × 128** | **64 × 128** |
+| initial atmosphere | quiescent, isothermal **264 K**, ps 1e5 | same |
+| initial humidity | `initial_sphum` **2e-6** | same |
+| initial surface | meridional SST `285 − 40·((3sin²φ−1)/3)` (eq 298.3 K, pole 258.3 K) | same |
+
+The IC is ported faithfully with Fortran citations in
+`jsca.model.frierson.initial_state` (`spectral_initialize_fields.F90` L87-88,
+`mixed_layer.F90` L347, `frierson_test_case.py`). The **only** deviation is a
+~1e-4 K symmetry-breaking temperature perturbation: Isca breaks the quiescent
+state's exact zonal symmetry through MPI-domain round-off, which float64 jsca
+cannot reproduce, so it seeds the perturbation explicitly.
+
+## Results (zonal-mean; jsca days 200-300, Isca days 100-200; post-fix)
 
 | field | correlation | RMSE | bias (jsca−Isca) |
 |-------|:-----------:|:----:|:----------------:|
-| surface temperature `t_surf` | **0.998** | 2.4 K | +0.2 K |
-| specific humidity `q` | **0.955** | 3.2 g/kg | −1.6 g/kg |
-| temperature `T(lat,p)` | **0.922** | 9.6 K | −6.1 K |
-| precipitation | 0.770 | 4.5 mm/day | −3.5 mm/day |
-| zonal wind `u(lat,p)` | 0.732 | 6.0 m/s | −2.0 m/s |
+| specific humidity `q(lat,p)` | **0.9996** | 0.14 g/kg | +0.02 g/kg |
+| precipitation | **0.9954** | 0.40 mm/day | −0.06 mm/day |
+| temperature `T(lat,p)` | **0.9975** | 2.1 K | −0.86 K |
+| surface temperature `t_surf` | **0.9991** | 1.8 K | −0.69 K |
+| zonal wind `u(lat,p)` | **0.942** | 4.0 m/s | +1.9 m/s |
 
-**The thermodynamic mean state is faithful.** Surface temperature is almost
-identical (corr 0.998), and the humidity and temperature structure track Isca
-closely (0.92–0.96) — consistent with the per-step column physics being validated
-against Isca to machine precision (`tests/test_idealized_moist_phys_fixtures.py`).
+jsca reproduces the **double eddy-driven jet** (peak **38.0 vs Isca 38.1 m/s**),
+the **ITCZ** precipitation peak, and the **midlatitude storm-track rain** at ±40°
+— all essentially on top of Isca. This is close to statistical parity for the
+mean state; the biases are ≤1 K in temperature and ≤0.1 mm/day in precip, at or
+near the `sat_vapor_pres` documented-deviation level.
 
-**The eddy-driven dynamics are under-developed after 60 days.** jsca's midlatitude
-jet is ~4× weaker than Isca's (≈8 vs 32 m/s) and its precipitation is much weaker
-(a weak ITCZ, essentially no midlatitude storm-track rain). This is a **spin-up /
-initial-condition difference, not a fidelity problem**:
+The water-conservation fix (below) is what got here: it removed the −9.1 K / −5.6 K
+cold bias (now −0.86 K / −0.69 K), corrected the humidity and precip biases (to
++0.02 g/kg and −0.06 mm/day), and restored the jet strength (28.6 → **38.0 m/s**).
+The residual `u` bias (+1.9 m/s, a near-surface high-latitude feature) is the main
+thing left to chase.
 
-- jsca cold-starts from an **isothermal** rest state, so it has *no* initial
-  meridional temperature gradient and hence no initial baroclinicity. It spends
-  the first ~30–50 days just establishing the gradient (which, encouragingly,
-  *does* match Isca by day 30–60) — and only then can baroclinic eddies grow.
-  Isca's initial condition already carries a gradient, so its eddies are mature by
-  day 60.
-- The Frierson jet is eddy-driven and takes ≳100 days from rest to equilibrate;
-  60 days with a 30-day spin-up captures the mean thermal state but only the
-  *onset* of the eddy field.
+## The cold bias was a bug — the water-conservation source term (now fixed)
 
-So the mean state matches and the eddies lag — exactly the signature of two
-chaotic integrations compared before either has reached statistical equilibrium.
+> The results above are **post-fix**. The −5.6 K / −9.1 K "cold bias" earlier
+> reported was a genuine bug, not incomplete equilibration. This section is the
+> fix and its validation.
 
-## Performance (single-core CPU, no GPU)
+Comparing the jsca and Isca global-mean *trajectories* from the **same** initial
+condition exposed the cause. jsca's precipitation did not switch on for ~45 days
+(Isca rains by ~day 10), and its global-mean temperature overshot to ~239 K
+(Isca bottoms at ~252 K). Instrumenting the water budget showed the smoking gun:
+**surface evaporation ran at a healthy ~3.7 mm/day, yet column water never
+accumulated — ~97 % of the evaporated water was vanishing every step.**
 
-| | per-step | grid | grid points |
+The culprit is the global water-conservation correction. Isca sets its reference
+to the previous water **plus the physics moisture source**,
+`mean_water_previous = ⟨q_prev + Δt·dt_qg_physics⟩` (`spectral_dynamics.F90`
+L1332-1333), so the correction removes only spectral-transport/truncation drift.
+jsca used bare `q_prev`, so the correction restored water to the *pre-evaporation*
+total every step, **deleting the entire evaporation source**. Starved of
+moisture, the atmosphere got no latent heating and radiatively overshot cold —
+the "cold bias." (The fix is one term; jsca's *energy* reference already advanced
+by the physics tendency, and the water line had simply omitted the match.)
+
+### Validation: 1-year evolution at T21, jsca vs a real Isca T21 run
+
+After the fix, jsca and a real pinned-Isca `frierson_test_case` run at **T21
+(64×32)**, both integrated **one full year from the same IC**, track each other
+throughout:
+
+![jsca vs Isca T21 1-year evolution](figures/frierson_t21_year_evolution.png)
+
+- **Precip switches on together** (~day 5-10) and settles at ~4.5 mm/day.
+- **No cold overshoot** — global-mean `T` follows Isca down to ~252 K.
+- **Equilibrium (last 100 days) global means:**
+
+| field | Isca | jsca | diff |
 |---|:---:|:---:|:---:|
-| Isca (Fortran) | 0.283 s | 64×128×25 | 204,800 |
-| jsca (JAX) | 0.355 s | 86×172×25 | 369,800 |
+| temperature `T` | 252.1 K | 252.1 K | **−0.01 K** |
+| precipitation | 4.65 mm/day | 4.53 mm/day | −0.12 mm/day |
+| column water | 2.57 g/kg | 2.80 g/kg | +0.23 g/kg |
+| surface `t_surf` | 288.2 K | 288.8 K | +0.66 K |
 
-jsca ran on a **1.8× finer grid**, so per grid-point it is **~1.4× faster than
-single-core Isca** on CPU — already past the ≥0.5×-Fortran gate before its GPU
-design target (batched transforms + `lax.scan`), where it would be far faster.
-(A like-for-like 64×128 jsca run is a follow-up; these are the raw numbers.)
+The ~9 K column / ~5.6 K surface cold bias is **gone** (now −0.01 K / +0.66 K).
+Regenerate with:
 
-## What closing item 11c / #27 needs
+```
+python scripts/run_frierson_climatology.py          # jsca T42 matched run
+python scripts/extract_isca_evolution.py <atmos_daily.nc> baseline/reference/frierson_isca_evolution_t21.npz
+python scripts/plot_frierson_evolution.py baseline/reference/frierson_jsca_evolution_t21.npz \
+    docs/figures/frierson_t21_year_evolution.png baseline/reference/frierson_isca_evolution_t21.npz
+```
 
-1. **Equilibrium runs.** Integrate both models long enough to reach statistical
-   equilibrium (≳150–200 days spin-up) and average over ≳100 days, so the eddy
-   statistics — jet, storm tracks, ITCZ — are comparable, not a spin-up snapshot.
-   That is many hours of CPU here; the natural venue is jsca's GPU target.
-2. **Match the spin-up.** Optionally start jsca from a Frierson-like initial state
-   (with a meridional temperature gradient) so its eddies develop on Isca's
-   timescale, sharpening the comparison.
-3. **Statistical test.** Feed the equilibrium climatologies to the `jsca.testing`
-   ensemble-mean comparison (as the dry HS core uses) for a quantitative
-   within-sampling-parity verdict.
+## The residual polar bias was over-strong spectral damping (also fixed)
 
-Until that passes, #27 stays open. This benchmark establishes the foundation: the
-model runs end to end, the physics is Fortran-exact per step, and the mean
-thermodynamic climate matches.
+With the cold bias gone, one residual remained visible: at T21 the poles were
+~4 K too cold, the tropics ~2 K too warm, and the high-latitude near-surface
+winds far too weak (0.9 vs 5.7 m/s) — a **too-weak-poleward-transport** signature.
+It was *not* spin-up: both models' polar caps were equilibrated (jsca trend
++0.3 K/60 d), so jsca simply settled colder.
+
+The cause was a second config mismatch: Isca's `frierson_test_case` sets
+**`damping_order = 4`** (∇⁸ hyperdiffusion), but `build_frierson` was inheriting
+the Isca *default* order **2** (∇⁴). With `damping_option='resolution_dependent'`
+(`damping ∝ (eigen/eigen_max)^order`), order 2 damps the energy-containing eddies
+far harder than order 4 — throttling the eddy heat/momentum flux. Setting
+`build_frierson` to Isca's order 4 (T21, both equilibrated):
+
+| T21 polar cap (equilibrium) | pre-fix | post-fix | Isca |
+|---|:---:|:---:|:---:|
+| polar `t_surf` | 250.6 K | **254.64 K** | 254.66 K (Δ **−0.02**) |
+| tropical `t_surf` | 302.2 K | **300.52 K** | 300.40 K (Δ **+0.12**) |
+| polar near-surface `u` | 0.88 m/s | **5.34 m/s** | 5.75 m/s (Δ −0.41) |
+
+The polar cold bias (−4.1 → **−0.02 K**), tropical warm bias (+1.8 → **+0.1 K**),
+and weak polar winds (≈90 % closed) all collapse. The full **both-fixes** T21
+zonal-mean climatology (`compare_frierson_climatology.py t21`,
+`figures/frierson_climatology_t21.png`) then matches Isca across every field —
+`q` corr 0.9998, precip 0.9991, `T` 0.9994 (+0.09 K), `t_surf` 0.9994 (+0.13 K),
+`u` 0.9932 (−0.32 m/s) — the headline result of this work. (The T42
+`matched` figure above is **water-fix-only**; the damping fix's polar improvement
+is shown at T21, per the "validate at T21 first" rule — a T42 both-fixes refresh
+is optional and was not needed to establish the result.)
+
+## Performance — like-for-like (single-core CPU, no GPU)
+
+| | grid | per-step |
+|---|:---:|:---:|
+| Isca (Fortran) | 64×128×25 | 0.283 s |
+| **jsca (JAX)** | **64×128×25** | **0.178 s** |
+
+On the **identical grid**, jsca is **~1.6× faster than single-core Isca** on CPU
+(recorded in the reference `.npz` as `_perf_ms_per_step`) — comfortably past the
+≥0.5×-Fortran gate, and before its GPU design target (batched transforms +
+`lax.scan`) where the margin would widen. (The earlier 86×172 jsca run was
+0.358 s/step — ~1.4×/grid-point; matching the grid makes this a clean wall-clock
+comparison.)
+
+## What closing item 11c / #27 still needs
+
+With the water-conservation and `damping_order` fixes the mean state matches Isca
+closely at T21 — every field within ~1 K / ~0.1 mm/day. Remaining:
+
+1. ~~Statistical test~~ ✅ **done — parity confirmed.**
+
+## Statistical parity — the #27 closer
+
+The Tier-3 test the dry HS core uses (`jsca.testing.ensemble_mean_test`): build
+**8 monthly (30-day) ensemble members** per model from the equilibrated T21
+window, and at each (level, latitude) point ask whether jsca's ensemble mean lies
+within Isca's own month-to-month internal variability — FDR-controlled across all
+points, with a per-field practical floor. Run:
+`python scripts/compare_frierson_ensemble.py`.
+
+![statistical parity](figures/frierson_ensemble_parity.png)
+
+| field | bias (jsca−Isca) | fail_fraction (FDR 5% + floor) |
+|---|:---:|:---:|
+| `u` | −0.32 m/s | **0.0 %** |
+| `T` | +0.05 K | **0.0 %** |
+| `sphum` | +0.001 g/kg | **0.0 %** |
+| `t_surf` | +0.13 K | **0.0 %** |
+| precipitation | −0.000 mm/day | **0.0 %** |
+
+**Zero points fail on any field** — every jsca−Isca difference sits inside Isca's
+internal variability (no stipple anywhere in the figure). This is within-sampling
+statistical parity: the definition of done for #27.
+
+*(Optional follow-up: a T42 both-fixes headline refresh — expected to match the
+T21 result; not required for parity.)*

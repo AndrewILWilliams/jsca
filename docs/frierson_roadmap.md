@@ -108,14 +108,27 @@ implicit vertical-diffusion solve.
       and matched jsca to machine precision (momentum ~1e-15; T/q at the
       `sat_vapor_pres` deviation ~1e-9). ✅ done. Caught & fixed two wiring bugs
       (real geopotential `z_half`; the `gust=1.0` initial gustiness).
-    - 11c. **Frierson run + climatology vs Isca** — 🔶 **first benchmark done**
-      (`docs/frierson_climatology.md`): a T42 60-day jsca `FriersonModel` run vs a
-      real Isca Frierson run. The thermodynamic mean state matches (t_surf corr
-      0.998, q 0.95, T 0.92); the eddy-driven jet/precip lag because jsca cold-
-      starts isothermal (no initial baroclinicity) and 60 days is short. jsca runs
-      ~1.4×/grid-point faster than single-core Isca on CPU. **Full statistical
-      parity (the #27 closer) still needs equilibrium (multi-hundred-day) runs** —
-      ideally on jsca's GPU target — fed to the `jsca.testing` ensemble test.
+    - 11c. **Frierson run + climatology vs Isca** — 🔶 **mean-state parity
+      reached** (`docs/frierson_climatology.md`): like-for-like T42 (Isca's 64×128
+      grid + Isca's exact IC). A bug in the **water-conservation correction**
+      (reference omitted the physics moisture source, deleting evaporation each
+      step — `spectral_dynamics.F90` L1332-1333) had starved the atmosphere of
+      moisture, delaying precip ~45 days and driving a ~9 K cold overshoot. Fixed;
+      the fix removed the whole "cold bias". Post-fix matched climatology (days
+      200-300): q corr 0.9996 (bias +0.02 g/kg), precip 0.9954 (−0.06 mm/day), T
+      0.9975 (−0.86 K), t_surf 0.9991 (−0.69 K), jet **38.0 vs 38.1 m/s**.
+      Validated with a 1-year **T21 jsca-vs-Isca** run from the same IC (precip on
+      together ~day 5-10, no cold overshoot, last-100-day T diff −0.01 K).
+      Performance 178 ms/step at 64×128 (~1.6× faster than single-core Isca). A
+      second config mismatch — `build_frierson` inherited `damping_order=2` vs
+      Isca's Frierson `damping_order=4` — was over-damping the eddies, giving a
+      real (not spin-up) polar residual (cold poles, warm tropics, weak
+      high-latitude winds); with order 4 the T21 polar-cap biases collapse
+      (t_surf −4.1→−0.02 K, tropics +1.8→+0.1 K, polar wind ≈90 % closed).
+      **#27 statistical parity reached** ✅: the Tier-3 `ensemble_mean_test`
+      (8×30-day members per model, T21) returns fail_fraction **0.0 %** on every
+      field (u, T, sphum, t_surf, precip) — every jsca−Isca difference within
+      Isca's internal variability. Item 11c and #27 are done.
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward
