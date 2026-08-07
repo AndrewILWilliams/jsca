@@ -32,7 +32,9 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from jsca import constants
+from jsca.dycore.fv_advection import a_grid_horiz_advection
 from jsca.dycore.global_integral import mass_weighted_global_integral
+from jsca.dycore.vert_advection import ADVECTIVE_FORM, SECOND_CENTERED, vert_advection
 from jsca.grid.transforms import area_weighted_global_mean
 
 Array = jnp.ndarray
@@ -277,3 +279,80 @@ def compute_corrections(
             mean_energy_previous, mean_surf_press_previous, grav, cp_air,
         )
     return psg, tg, ln_ps_00, ts_00
+
+
+# --------------------------------------------------------------------------- #
+# grid tracer time-step (update_tracers, grid branch, F90 L1223-1248)
+# --------------------------------------------------------------------------- #
+#
+# Frierson advects humidity (sphum) as a **grid** tracer (Isca field_table
+# numerical_representation='grid'), so its per-step update is the grid branch of
+# update_tracers: apply the accumulated physics tendency, then A-grid horizontal
+# advection (fv_advection) and vertical advection, then the Robert/RAW time
+# filter. hole_filling='off' for Frierson, so water_borrowing is not invoked here.
+#
+# The step assembly is scheme-agnostic (the vertical scheme is an argument) and is
+# fixture-validated with SECOND_CENTERED (a ported scheme). Frierson's production
+# vertical scheme is finite_volume_parabolic (PPM); its jsca vert_advection port is
+# the next follow-up, after which this function is used unchanged with that scheme.
+
+
+def update_grid_tracer(
+    q_prev: Array,
+    q_cur: Array,
+    dt_tr_phys: Array,
+    ua: Array,
+    va: Array,
+    wg: Array,
+    p_half: Array,
+    dt: float,
+    robert_coeff: float,
+    raw_filter_coeff: float,
+    fv_params,
+    last_step: bool = False,
+    scheme: int = SECOND_CENTERED,
+) -> tuple[Array, Array, Array]:
+    """One grid-tracer time-step — port of ``update_tracers`` grid branch
+    (F90 L1223-1248).
+
+    Args (``(..., nlat, nlon, K)`` unless noted): the humidity at the previous and
+    current time levels, the accumulated physics tendency ``dt_tr_phys`` (added
+    then reset, F90 L1224-1225), the current-level winds ``ua``/``va``, the
+    interface vertical mass flux ``wg`` (``(..., nlat, nlon, K+1)``, from
+    :func:`four_in_one`), and the half-level pressures ``p_half``
+    (``(..., nlat, nlon, K+1)``). ``fv_params`` is the
+    :class:`jsca.dycore.fv_advection.FvAdvectionParams` grid metrics.
+
+    Returns ``(q_cur_new, q_future, part_filt)`` — the Robert/RAW-filtered current
+    level, the new future level, and the partially-filtered increment.
+
+    **RAW dead-store quirk (F90 L1243 vs L1248).** On a non-last sub-step the
+    Fortran computes ``q_future = tr + robert·part_filt·(raw−1)`` (L1243) but the
+    unconditional trailing ``q_future = tr`` (L1248) immediately overwrites it, so
+    the future-level RAW correction never takes effect — the future level is just
+    the advected tracer ``tr``. This is a faithful Isca quirk (cf. the
+    ``leapfrog_2level_A`` RAW note in :mod:`jsca.dycore.leapfrog`); we reproduce it.
+    """
+    tr = q_prev + dt * dt_tr_phys  # F90 L1224 (physics tendency applied)
+
+    # horizontal advection (F90 L1226): a_grid_horiz_advection batches over leading
+    # axes with (nlat, nlon) last, so move the level axis to the front and back.
+    ua_lb = jnp.moveaxis(ua, -1, 0)
+    va_lb = jnp.moveaxis(va, -1, 0)
+    tr_lb = jnp.moveaxis(tr, -1, 0)
+    dq_h = a_grid_horiz_advection(ua_lb, va_lb, tr_lb, dt, jnp.zeros_like(tr_lb), fv_params)
+    tr = tr + dt * jnp.moveaxis(dq_h, 0, -1)  # F90 L1227
+
+    # vertical advection (F90 L1228-1230), advective form, level-last
+    dp = p_half[..., 1:] - p_half[..., :-1]
+    dq_v = vert_advection(dt, wg, dp, tr, scheme=scheme, form=ADVECTIVE_FORM)
+    tr = tr + dt * dq_v  # F90 L1230
+
+    # Robert/RAW time filter (F90 L1231-1248)
+    if last_step:
+        part_filt = q_prev - 2.0 * q_cur  # F90 L1232
+    else:
+        part_filt = q_prev - 2.0 * q_cur + tr  # F90 L1238
+    q_cur_new = q_cur + robert_coeff * part_filt * raw_filter_coeff  # F90 L1234/L1240
+    q_future = tr  # F90 L1248 overwrites the L1243 future-level RAW correction
+    return q_cur_new, q_future, part_filt
