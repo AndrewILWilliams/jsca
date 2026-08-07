@@ -90,7 +90,21 @@ implicit vertical-diffusion solve.
 
     **Item 10 (moist spectral core) complete.**
 11. `idealized_moist_phys` assembly + the Frierson run + climatology validation
-    vs Isca (`jsca.testing`). ← **next: the final assembly**
+    vs Isca (`jsca.testing`).
+    - 11a. **Column-physics driver** (`jsca.model.idealized_moist_phys`) —
+      composes the ten validated column-physics modules in Isca's exact call
+      order (F90 L819-1337): convection → condensation → grey-rad down → surface
+      flux → grey-rad up → sponge → diffusivity → vert-diff down → mixed layer →
+      vert-diff up. ✅ done ← this PR (stability/conservation smoke-tested; each
+      component already golden-validated).
+    - 11b. **Moist spectral stepping** — extend the model step with the `sphum`
+      grid tracer (`update_grid_tracer` + `water_correction`) and the `t_surf`
+      slab-ocean state; integrate 11a into the leapfrog loop. ← **next**
+    - 11c. **Frierson run + climatology vs Isca** — needs a pinned Isca Frierson
+      reference (a full Isca build + multi-year run, as `baseline/reference/`
+      holds for the dry HS core). An instrumented-Isca **step fixture** (like the
+      dry `spectral_dynamics_step` one) is what turns 11a/11b's smoke tests into
+      machine-precision gates; both need Isca infra outside this port.
 
 Discovered Isca bug (documented in `vert_advection.py`): the PPM Courant>1 walk
 for *downward* (`w<0`) interfaces exits on `kk==ks` while incrementing toward

@@ -7,5 +7,19 @@ from .held_suarez import (
     integrate,
     step,
 )
+from .idealized_moist_phys import (
+    FriersonPhysicsParams,
+    MoistPhysicsOutput,
+    idealized_moist_phys,
+)
 
-__all__ = ["HeldSuarezModel", "build_held_suarez", "initial_state", "step", "integrate"]
+__all__ = [
+    "HeldSuarezModel",
+    "build_held_suarez",
+    "initial_state",
+    "step",
+    "integrate",
+    "FriersonPhysicsParams",
+    "MoistPhysicsOutput",
+    "idealized_moist_phys",
+]
