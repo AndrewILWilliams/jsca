@@ -114,8 +114,15 @@ def build_dynamics_params(
     damping_coeff: float = 1.15740741e-4,  # (0.1 day)^-1, Isca default
     damping_order: int = 2,  # del^4 (Isca default; damping ~ eigen^2 ~ l^4)
     surf_geopotential: np.ndarray | None = None,
+    pk: np.ndarray | None = None,
+    bk: np.ndarray | None = None,
 ) -> DynamicsParams:
-    """Build :class:`DynamicsParams` — the Python analogue of ``spectral_dynamics_init``."""
+    """Build :class:`DynamicsParams` — the Python analogue of ``spectral_dynamics_init``.
+
+    ``pk``/``bk`` (the ``num_levels+1`` hybrid coefficients) may be passed
+    explicitly to override ``vert_coord_option`` — needed for Frierson's
+    ``vert_coord_option='input'`` (the 25-level table from ``frierson_test_case``).
+    """
     trunc = Truncation(num_fourier)
     grid = SpectralGrid(trunc, nlat=nlat, nlon=nlon, radius=radius)
     params, gg = build_transforms(grid)
@@ -123,11 +130,14 @@ def build_dynamics_params(
     # pk/bk/dpk/dbk are kept as NumPy (static coordinate tables). Storing them as
     # concrete arrays keeps ``pressure_variables``' top-level ``bool(pk[0] == 0)``
     # check concrete under jit (a closed-over jnp array is lifted to a tracer).
-    pk, bk = compute_vert_coord(
-        vert_coord_option, num_levels, scale_heights=scale_heights, surf_res=surf_res,
-        exponent=exponent, p_press=p_press, p_sigma=p_sigma,
-        reference_press=reference_sea_level_press,
-    )
+    if pk is None or bk is None:
+        pk, bk = compute_vert_coord(
+            vert_coord_option, num_levels, scale_heights=scale_heights, surf_res=surf_res,
+            exponent=exponent, p_press=p_press, p_sigma=p_sigma,
+            reference_press=reference_sea_level_press,
+        )
+    else:
+        pk, bk = np.asarray(pk, dtype=float), np.asarray(bk, dtype=float)
     dpk, dbk = pk[1:] - pk[:-1], bk[1:] - bk[:-1]
 
     coriolis = jnp.asarray(2.0 * constants.OMEGA * gg.sin_lat)  # (nlat,)
@@ -180,6 +190,7 @@ def compute_tendencies(
     phys_dt_ug: Array | None = None,
     phys_dt_vg: Array | None = None,
     phys_dt_tg: Array | None = None,
+    return_diagnostics: bool = False,
 ) -> tuple[Array, Array, Array, Array]:
     """Spectral dynamical tendencies for one step — port of ``spectral_dynamics``
     L845-910 (dry). ``vors``/``divs``/``ts`` are ``(m, n, K, T)`` time-level stacks,
@@ -187,6 +198,13 @@ def compute_tendencies(
     ``phys_dt_*`` are optional grid ``(nlat, nlon, K)`` physics tendencies (default
     adiabatic). Returns ``(dt_vors, dt_divs, dt_ts, dt_ln_ps)``, damped and
     implicitly corrected.
+
+    ``return_diagnostics=True`` additionally returns a fifth element
+    ``(wg, ug, vg, p_half)`` at the *current* level — the interface vertical mass
+    flux and current-level grid winds / half pressures that the moist grid-tracer
+    advection (:func:`jsca.dycore.update_grid_tracer`) consumes, exactly as Isca's
+    ``update_tracers`` uses ``wg`` and ``ug/vg(current)``. The dry path (flag
+    False) is unchanged.
     """
     tf = p.transforms
     vc, dc, tc = vors[..., current], divs[..., current], ts[..., current]  # (m, n, K)
@@ -271,6 +289,8 @@ def compute_tendencies(
     dt_ts = jnp.where(mp[..., None], dt_ts, 0.0)
     dt_ln_ps = jnp.where(mp, dt_ln_ps, 0.0)
 
+    if return_diagnostics:
+        return dt_vors, dt_divs, dt_ts, dt_ln_ps, (wg, ug, vg, p_half)
     return dt_vors, dt_divs, dt_ts, dt_ln_ps
 
 

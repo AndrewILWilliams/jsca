@@ -298,9 +298,12 @@ def _ppm_interior_flux(w: Array, dz: Array, r: Array, dt: float) -> Array:
     extension is a departure-point integral: the walk that accumulates whole cells
     until the swept distance ``dt·|w|`` is covered is exactly a ``searchsorted`` on
     the cumulative-``dz`` prefix, so it needs no data-dependent loop. The single
-    unified formula ``rst = (xx·rst_partial + rsum)/cn`` reduces to the plain
-    single-cell PPM flux when ``cn <= 1`` (then ``rsum = 0``, ``xx = cn``, upwind
-    cell = the adjacent cell).
+    unified formula reduces to the plain single-cell PPM flux when ``cn <= 1``
+    (then ``rsum = 0``, ``xx = cn``, upwind cell = the adjacent cell). The flux is
+    formed as ``sign(w)·(dz_kk0/dt)·(xx·rst_partial + rsum)`` rather than F90's
+    ``w·(…)/cn`` — algebraically identical for ``w != 0`` (since
+    ``w/cn = sign(w)·dz_kk0/dt``) but finite (0) at ``w = 0``, which a resting
+    column hits at every interior interface.
     """
     k = r.shape[-1]
     r_left, r_right = _ppm_reconstruct(r, dz)
@@ -351,9 +354,13 @@ def _ppm_interior_flux(w: Array, dz: Array, r: Array, dt: float) -> Array:
             rst_partial = rRf - 0.5 * xx * (rm - (1.0 - tt * xx) * r6)
         else:  # F90 L428
             rst_partial = rLf + 0.5 * xx * (rm + (1.0 - tt * xx) * r6)
-        cn = jnp.abs(dt * w_int) / _gather(dz, kk0)  # F90 L379/L406 (dz of kk0)
-        rst = (xx * rst_partial + rsum) / cn  # F90 L403/L430 (reduces to rst_partial if cn<=1)
-        return w_int * rst
+        # F90 computes flux = w*rst with rst = (xx*rst_partial + rsum)/cn and
+        # cn = |dt w|/dz_kk0. Since w/cn = sign(w) * dz_kk0/dt exactly, we form the
+        # flux WITHOUT dividing by cn -- algebraically identical for w != 0 but
+        # finite (= 0) at w = 0, where the (…)/cn form is 0/0 (a resting column has
+        # w = 0 at every interior interface). sign is fixed per branch.
+        sign = 1.0 if sign_pos else -1.0
+        return sign * (_gather(dz, kk0) / dt) * (xx * rst_partial + rsum)
 
     return jnp.where(w_int >= 0.0, _branch(True), _branch(False))
 
