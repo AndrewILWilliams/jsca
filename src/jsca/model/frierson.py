@@ -148,12 +148,34 @@ def build_frierson(
     )
 
 
-def initial_state(m: FriersonModel, temperature: float = 280.0, surface_press: float = 1.0e5,
-                  t_surf: float = 285.0, humidity: float = 1.0e-6, seed: int = 0,
-                  perturb: float = 1.0e-4):
-    """Resting isothermal, near-dry state with a small temperature perturbation and
-    a warm uniform SST. Returns ``(vors, divs, ts, ln_ps, qg, t_surf)``; the
-    spectral fields and ``qg`` carry a length-2 time axis (previous == current)."""
+def initial_state(m: FriersonModel, temperature: float = 264.0, surface_press: float = 1.0e5,
+                  tconst: float = 285.0, delta_T: float = 40.0, humidity: float = 2.0e-6,
+                  seed: int = 0, perturb: float = 1.0e-4):
+    """Isca's Frierson initial condition: a quiescent isothermal atmosphere over a
+    slab ocean carrying a meridional SST gradient. Returns
+    ``(vors, divs, ts, ln_ps, qg, t_surf)``; the spectral fields and ``qg`` carry
+    a length-2 time axis (previous == current).
+
+    Faithful to the pinned Isca ``frierson_test_case`` set-up:
+
+    * **Atmosphere** -- ``initial_state_option='quiescent'``
+      (``spectral_initialize_fields.F90`` L87-88): zero winds, isothermal
+      ``initial_temperature = 264 K``, and ``ln(ps) = ln(reference_sea_level_press)``
+      with ``reference_sea_level_press = 1e5`` (aquaplanet surface geopotential 0,
+      so the geopotential term drops).
+    * **Humidity** -- ``initial_sphum = 2e-6`` (``frierson_test_case.py``).
+    * **Surface** -- ``mixed_layer`` with ``prescribe_initial_dist`` (``mixed_layer.F90``
+      L347): ``t_surf = tconst - delta_T*((3 sin^2(lat) - 1)/3)`` with
+      ``tconst = 285 K`` and the mixed_layer default ``delta_T = 40 K`` -- a 40 K
+      equator-to-pole SST gradient (equator 298.3 K, poles 258.3 K). This gradient
+      is the source of the initial baroclinicity, so jsca's eddies grow on Isca's
+      timescale rather than lagging a flat-SST cold start.
+
+    The lone deviation is ``perturb``: Isca breaks the quiescent state's exact
+    zonal symmetry through MPI-domain-decomposition round-off, whereas jsca must
+    seed an explicit tiny (~1e-4 K) temperature perturbation -- in exact float64 a
+    perfectly zonally-symmetric state never develops eddies.
+    """
     tf = m.dyn.transforms
     k = m.dyn.num_levels
     rng = np.random.default_rng(seed)
@@ -167,7 +189,7 @@ def initial_state(m: FriersonModel, temperature: float = 280.0, surface_press: f
     zero = jnp.zeros_like(ts)
     qg = jnp.full((m.nlat, m.nlon, k), humidity)
     stack = lambda x: jnp.stack([x, x], axis=-1)  # noqa: E731
-    tsurf = jnp.full((m.nlat, m.nlon), t_surf)
+    tsurf = tconst - delta_T * ((3.0 * jnp.sin(m.lat2d) ** 2 - 1.0) / 3.0)
     return stack(zero), stack(zero), stack(ts), stack(ln_ps), stack(qg), tsurf
 
 
