@@ -52,21 +52,25 @@ def setup():
     q = np.clip(0.015 * sigma**3, 1e-8, None)
     u = 5.0 + 20.0 * sigma + 0.5 * rng.standard_normal((NLAT, NLON, K))
     v = 2.0 * rng.standard_normal((NLAT, NLON, K))
-    # geopotential height above surface from hydrostatic ~ -H ln(sigma)
+    # geopotential heights above surface from hydrostatic ~ -H ln(sigma)
+    sigma_h = p_half / ps[..., None]
     z_full = -8000.0 * np.log(sigma)
+    z_half = -8000.0 * np.log(np.clip(sigma_h, 1e-6, None))
     t_surf = 285.0 + 15.0 * np.cos(lat)[:, None] * np.ones((1, NLON))  # warm tropics
+    gust = np.full((NLAT, NLON), 1.0)
 
     pref = np.asarray(p_full[0, 0])  # a reference column for the sponge depth
     params = FriersonPhysicsParams(damping=damping_driver_init(pref))
     return dict(params=params, lat2d=lat2d, lon2d=lon2d, u=u, v=v, t=t, q=q,
-                p_half=p_half, p_full=p_full, z_full=z_full, t_surf=t_surf)
+                p_half=p_half, p_full=p_full, z_full=z_full, z_half=z_half,
+                t_surf=t_surf, gust=gust)
 
 
 def _run(s):
     return idealized_moist_phys(
         s["params"], s["lat2d"], s["lon2d"], s["u"], s["v"], s["t"], s["q"],
-        s["p_half"], s["p_full"], s["p_half"], s["p_full"], s["z_full"],
-        s["t_surf"], DELTA_T, DT)
+        s["p_half"], s["p_full"], s["p_half"], s["p_full"], s["z_full"], s["z_half"],
+        s["t_surf"], s["gust"], DELTA_T, DT)
 
 
 def test_no_nans(setup):
@@ -103,7 +107,8 @@ def test_jit(setup):
     s = setup
     f = jax.jit(lambda u, v, t, q, ts: idealized_moist_phys(
         s["params"], s["lat2d"], s["lon2d"], u, v, t, q,
-        s["p_half"], s["p_full"], s["p_half"], s["p_full"], s["z_full"], ts, DELTA_T, DT))
+        s["p_half"], s["p_full"], s["p_half"], s["p_full"], s["z_full"], s["z_half"],
+        ts, s["gust"], DELTA_T, DT))
     out = f(s["u"], s["v"], s["t"], s["q"], s["t_surf"])
     assert np.all(np.isfinite(np.asarray(out.dt_tg)))
     # jit result must match eager (no tracing surprises)

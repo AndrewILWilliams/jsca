@@ -114,7 +114,9 @@ def idealized_moist_phys(
     p_half_cur: Array,
     p_full_cur: Array,
     z_full_cur: Array,
+    z_half_cur: Array,
     t_surf: Array,
+    gust: Array,
     delta_t: float,
     dt_real: float,
 ) -> MoistPhysicsOutput:
@@ -122,10 +124,18 @@ def idealized_moist_phys(
 
     Returns a :class:`MoistPhysicsOutput`. Tendencies accumulate from zero here;
     the caller adds them to the dynamical-core tendencies before the leapfrog.
-    ``z_full_cur`` is the geopotential height above the surface (``z_surf = 0`` for
-    the aquaplanet). Winds/temperature/humidity are the *previous* leapfrog level
-    (the driver's ``ug/vg/tg/grid_tracers(...,previous)``); pressures split into
-    previous (convection/condensation) and current (radiation/surface/diffusion).
+    Winds/temperature/humidity are the *previous* leapfrog level (the driver's
+    ``ug/vg/tg/grid_tracers(...,previous)``); pressures split into previous
+    (convection/condensation) and current (radiation/surface/diffusion).
+
+    ``z_full_cur``/``z_half_cur`` are the geopotential heights above the surface at
+    full/half levels (``z_surf = 0`` for the aquaplanet). Both are needed: the
+    boundary-layer ``diffusivity`` Richardson profile references ``z_half``, and a
+    midpoint approximation is not faithful (verified against Isca to machine
+    precision only with the real geopotential ``z_half``). ``gust`` is the surface
+    gustiness ``surface_flux`` uses; it is Isca's stateful ``vert_turb`` output from
+    the previous step (initialised to 1.0 m/s), so it is passed in rather than
+    hard-coded.
     """
     if params.damping is None:
         raise ValueError("params.damping must be set via damping_driver_init(pref)")
@@ -164,7 +174,9 @@ def idealized_moist_phys(
     rough_mom = jnp.broadcast_to(jnp.asarray(params.roughness_mom), lat2d.shape)
     rough_heat = jnp.broadcast_to(jnp.asarray(params.roughness_heat), lat2d.shape)
     rough_moist = jnp.broadcast_to(jnp.asarray(params.roughness_moist), lat2d.shape)
-    gust = jnp.broadcast_to(jnp.asarray(params.gust_const), lat2d.shape)
+    # gust is the previous step's vert_turb gustiness (Isca inits it to 1.0 m/s and
+    # updates it each step); it is an input because it is stateful across steps.
+    gust = jnp.broadcast_to(jnp.asarray(gust), lat2d.shape)
     sf = surface_flux(
         t_prev[..., -1], q_prev[..., -1], u_prev[..., -1], v_prev[..., -1],
         p_atm, z_atm, p_surf, t_surf, zero_s, zero_s,
@@ -182,7 +194,6 @@ def idealized_moist_phys(
     dt_tg = dt_tg + tdt_s
 
     # --- 7. boundary-layer diffusivity (K profiles) --- F90 L1242
-    z_half_cur = _half_from_full_heights(z_full_cur)
     diff_m, diff_t, pbl_h = diffusivity(
         params.diff, t_prev, q_prev, u_prev, v_prev, z_full_cur, z_half_cur,
         sf.u_star, sf.b_star, params.mo)
@@ -205,14 +216,3 @@ def idealized_moist_phys(
     return MoistPhysicsOutput(
         dt_ug=dt_ug, dt_vg=dt_vg, dt_tg=dt_tg, dt_qg=dt_qg,
         t_surf=t_surf_new, precip=precip, pbl_height=pbl_h)
-
-
-def _half_from_full_heights(z_full: Array) -> Array:
-    """Half-level heights ``(..., K+1)`` from full-level heights by simple midpoint
-    interpolation, with the surface at 0 and the top extrapolated. Used only by the
-    boundary-layer ``diffusivity`` Richardson-number profile, which references
-    ``z_half`` differences; the aquaplanet surface is at ``z = 0``."""
-    interior = 0.5 * (z_full[..., :-1] + z_full[..., 1:])
-    top = z_full[..., :1] + (z_full[..., :1] - interior[..., :1])
-    surf = jnp.zeros_like(z_full[..., :1])
-    return jnp.concatenate([top, interior, surf], axis=-1)
