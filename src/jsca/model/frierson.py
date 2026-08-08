@@ -35,7 +35,7 @@ reference (a full Isca build) — see ``docs/frierson_roadmap.md``.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import jax
 import jax.numpy as jnp
@@ -107,10 +107,20 @@ def build_frierson(
     raw_filter_coeff: float = 1.0,
     mixed_layer_depth: float = 2.5,
     albedo: float = 0.31,
+    physics: FriersonPhysicsParams | None = None,
     **dyn_kwargs,
 ) -> FriersonModel:
     """Build a Frierson moist model at T``num_fourier`` with the 25-level pure-sigma
-    coordinate. ``dt`` is the physical timestep; the leapfrog interval is ``2 dt``."""
+    coordinate. ``dt`` is the physical timestep; the leapfrog interval is ``2 dt``.
+
+    ``physics`` supplies a fully-configured :class:`FriersonPhysicsParams` bundle
+    (every column-physics namelist knob — grey radiation, surface layer, boundary
+    layer, slab ocean, roughness, gustiness). It is the hook the object API
+    (:mod:`jsca.api`) uses to thread notebook-set physics options through. When it
+    is ``None`` the Isca Frierson defaults are used with the ``mixed_layer_depth``
+    and ``albedo`` convenience overrides. The sponge (``damping``) is derived here
+    from the reference pressure profile, so a caller may leave ``physics.damping``
+    as ``None`` and have it filled in."""
     num_levels = len(FRIERSON_BK) - 1
     nlat = nlat or (2 * num_fourier + 2)
     nlon = nlon or (4 * num_fourier + 4)
@@ -128,12 +138,18 @@ def build_frierson(
     # reference full-level pressures for the sponge depth (pressure_variables at PSTD)
     p_half_1d, _, p_full_1d, _ = pressure_variables(
         FRIERSON_PK, FRIERSON_BK, jnp.asarray(constants.PSTD_MKS), "simmons_and_burridge")
-    from jsca.physics.mixed_layer import MixedLayerParams
-    phys = FriersonPhysicsParams(
-        mixed_layer=MixedLayerParams(depth=mixed_layer_depth, albedo=albedo),
-        damping=damping_driver_init(np.asarray(p_full_1d)),
-        albedo=albedo,
-    )
+    sponge = damping_driver_init(np.asarray(p_full_1d))
+    if physics is None:
+        from jsca.physics.mixed_layer import MixedLayerParams
+        phys = FriersonPhysicsParams(
+            mixed_layer=MixedLayerParams(depth=mixed_layer_depth, albedo=albedo),
+            damping=sponge,
+            albedo=albedo,
+        )
+    else:
+        # honor a caller-supplied sponge; otherwise fill it from the reference
+        # profile computed above (the caller cannot know pref before build time).
+        phys = replace(physics, damping=physics.damping or sponge)
 
     # A-grid latitude cell edges: midpoints of sin(lat) with poles at +/-1
     # (aquaplanet convention; the exact Gaussian-boundary form is pinned once the
