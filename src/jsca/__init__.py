@@ -11,24 +11,41 @@ jax.config.update("jax_enable_x64", True)
 
 __version__ = "0.0.1"
 
-# Object API (prototype) — a host-side ergonomics layer over the functional model
-# core; imported after x64 is enabled (it pulls in jax-array-creating modules).
+# Composable object API (prototype) — a host-side ergonomics layer over the
+# functional model core; imported after x64 is enabled (it pulls in
+# jax-array-creating modules). `configs` holds the pre-packaged recipes.
+from jsca import configs  # noqa: E402, F401
 from jsca.api import (  # noqa: E402
-    BoundaryLayer,
-    Frierson,
+    BettsMillerConvection,
+    DryForcing,
     GrayRadiation,
-    MixedLayer,
+    HeldSuarezForcing,
+    LargeScaleCondensation,
+    Model,
+    MoistPhysics,
+    RayleighSponge,
     Simulation,
+    SpectralDynamics,
     SpectralGrid,
-    SurfaceLayer,
+    SurfaceMixedLayer,
 )
 
 __all__ = [
-    "BoundaryLayer",
-    "Frierson",
-    "GrayRadiation",
-    "MixedLayer",
-    "Simulation",
+    "configs",
+    # grid + dynamics
     "SpectralGrid",
-    "SurfaceLayer",
+    "SpectralDynamics",
+    # physics packages
+    "MoistPhysics",
+    "DryForcing",
+    # physics terms
+    "GrayRadiation",
+    "BettsMillerConvection",
+    "LargeScaleCondensation",
+    "RayleighSponge",
+    "SurfaceMixedLayer",
+    "HeldSuarezForcing",
+    # assembler + runner
+    "Model",
+    "Simulation",
 ]

@@ -65,14 +65,17 @@ def build_held_suarez(
     dt: float = 600.0,  # advective CFL at T21 with ~30 m/s jets needs dt <~ 900 s
     robert_coeff: float = 0.04,
     raw_filter_coeff: float = 1.0,  # Isca default (RAW off; 0.53 "appears unstable" per Isca)
+    forcing: HsForcingParams | None = None,
     **dyn_kwargs,
 ) -> HeldSuarezModel:
     """Build a Held-Suarez model. ``dt`` is the physical timestep; the leapfrog
-    interval is ``2 dt``."""
+    interval is ``2 dt``. ``forcing`` supplies the Newtonian-relaxation /
+    Rayleigh-friction configuration (the hook the object API in :mod:`jsca.api`
+    uses to thread notebook-set knobs through); ``None`` uses the HS94 defaults."""
     nlat = nlat or (2 * num_fourier + 2)
     nlon = nlon or (4 * num_fourier + 4)
     dyn = build_dynamics_params(num_fourier, nlat, nlon, num_levels, **dyn_kwargs)
-    hs = hs_forcing_init()
+    hs = forcing if forcing is not None else hs_forcing_init()
     delta_t = 2.0 * dt
     wave_matrix = build_wave_matrices(dyn.implicit, delta_t)
     wave_matrix_cold = build_wave_matrices(dyn.implicit, dt)

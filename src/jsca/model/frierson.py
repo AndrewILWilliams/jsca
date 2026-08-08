@@ -108,6 +108,9 @@ def build_frierson(
     mixed_layer_depth: float = 2.5,
     albedo: float = 0.31,
     physics: FriersonPhysicsParams | None = None,
+    sponge_trayfric: float = -0.25,
+    sponge_pbottom: float = 5000.0,
+    sponge_conserve: bool = True,
     **dyn_kwargs,
 ) -> FriersonModel:
     """Build a Frierson moist model at T``num_fourier`` with the 25-level pure-sigma
@@ -119,8 +122,8 @@ def build_frierson(
     (:mod:`jsca.api`) uses to thread notebook-set physics options through. When it
     is ``None`` the Isca Frierson defaults are used with the ``mixed_layer_depth``
     and ``albedo`` convenience overrides. The sponge (``damping``) is derived here
-    from the reference pressure profile, so a caller may leave ``physics.damping``
-    as ``None`` and have it filled in."""
+    from the reference pressure profile (using the ``sponge_*`` knobs), so a caller
+    may leave ``physics.damping`` as ``None`` and have it filled in."""
     num_levels = len(FRIERSON_BK) - 1
     nlat = nlat or (2 * num_fourier + 2)
     nlon = nlon or (4 * num_fourier + 4)
@@ -138,7 +141,9 @@ def build_frierson(
     # reference full-level pressures for the sponge depth (pressure_variables at PSTD)
     p_half_1d, _, p_full_1d, _ = pressure_variables(
         FRIERSON_PK, FRIERSON_BK, jnp.asarray(constants.PSTD_MKS), "simmons_and_burridge")
-    sponge = damping_driver_init(np.asarray(p_full_1d))
+    sponge = damping_driver_init(
+        np.asarray(p_full_1d), trayfric=sponge_trayfric,
+        sponge_pbottom=sponge_pbottom, do_conserve_energy=sponge_conserve)
     if physics is None:
         from jsca.physics.mixed_layer import MixedLayerParams
         phys = FriersonPhysicsParams(
