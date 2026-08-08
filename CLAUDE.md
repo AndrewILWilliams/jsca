@@ -94,6 +94,14 @@ associated Legendre, spectral transforms, Laplacian/hyperdiffusion),
 `jsca.dycore` (leapfrog/RAW incl. two-level split, matrix_invert,
 press_and_geopot), `jsca.testing` (Tier-3 equivalence stats), constants.
 
+Assembled (smoke/invariant-tested; golden step fixtures pending a full Isca
+build): `jsca.model.idealized_moist_phys` (Frierson column physics stack),
+`jsca.model.frierson` (moist aquaplanet stepping), and `jsca.model.column` —
+the **single-column model (SCM)**, Isca's `src/atmos_column` driver: the full
+column physics stepped with the dynamical core bypassed (fixed winds/ps, grid
+leapfrog of T and q, optional `q_decrease_only` clamp). It is the Tier-2
+physics-chain test harness (scoping §4.4); see `docs/single_column_model.md`.
+
 ## Next queue (in order; one item per session is a good size)
 
 1. **`spectral_damping.F90`** — deps: fms + `transforms_mod`

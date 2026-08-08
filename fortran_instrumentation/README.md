@@ -13,6 +13,13 @@ harvester.
 - `dump_grid_reference.F90` — standalone driver that links against Isca's own
   `gauss_and_legendre.F90` and dumps Gaussian nodes/weights and normalized
   associated Legendre functions at T42/64-lat: the first real fixtures.
+- `dump_column_init_reference.F90` (+ `column_stubs.F90`) — standalone driver for
+  the single-column model's cold-start initial condition
+  (`src/atmos_column/column_initialize_fields.F90`, compiled unmodified). The one
+  genuinely-new arithmetic routine in the SCM port (`jsca/model/column.py`); the
+  rest of the SCM is an assembly of already-fixtured kernels. **Fixtures pending**
+  an Isca build (build/run line in the driver header) — until then the routine is
+  covered by the arithmetic assertion in `tests/test_column.py`.
 
 ## Recipe
 

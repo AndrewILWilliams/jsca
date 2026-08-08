@@ -30,9 +30,40 @@ as the index arguments are static Python ints.
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 
 Array = jnp.ndarray
+
+
+def apply_q_decrease_only(q: Array) -> Array:
+    """Clamp a humidity column so it never increases with height — port of the
+    ``q_decrease_only`` block of the single-column ``leapfrog_3d_real``
+    (``atmos_column/column.F90`` L782-792).
+
+    Isca's SCM offers ``q_decrease_only`` to stop the stratospheric humidity from
+    growing upward (a common artefact when the dynamical moisture sink is absent).
+    The Fortran sweeps levels from the second-lowest **up** to the top and, wherever
+    a level's humidity exceeds the level just below it, copies the below value up::
+
+        do k = K-1, 1, -1
+          if q(k) > q(k+1) then q(k) = q(k+1)
+
+    With the level axis last (``k = 0`` top … ``K-1`` surface) and applied per
+    column, the sequential upward sweep is exactly a reverse cumulative minimum
+    from the surface: ``q[..., k] = min(q[..., k], q[..., k+1], …, q[..., K-1])``.
+
+    **Deliberate, documented deviation (rule 1).** The Fortran takes its
+    *decision* from the first column ``q(1,1,k)`` yet assigns to every column
+    ``q(:,:,k) = q(:,:,k+1)`` — a quirk that is only self-consistent for a genuine
+    single column (``lat_max = lon_max = 1``), the case the SCM is built for. Here
+    the clamp is applied **independently per column** (each column uses its own
+    profile). For the single-column case the two are identical; for a multi-column
+    run this is the physically sensible interpretation rather than Isca's
+    first-column-decides-for-all behaviour.
+    """
+    # cummin needs a non-negative axis; the level axis is the last one.
+    return jax.lax.cummin(q, axis=q.ndim - 1, reverse=True)
 
 
 def leapfrog(
