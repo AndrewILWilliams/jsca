@@ -38,10 +38,12 @@ configured* — it does not (yet) let you arbitrarily reorder or drop terms insi
 the coupled moist block. Turning that block into genuinely swappable components
 (à la SpeedyWeather) is a real driver refactor, gated by the moist step fixture.
 
-Consequently, of the moist terms, **radiation, the surface/boundary-layer cluster,
-and the sponge** thread their parameters through today; **convection and
-large-scale condensation are still hardcoded in ``idealized_moist_phys``**, so
-their component objects here are structural placeholders (documented on each).
+All moist terms now thread their parameters through to the run — convection
+(``rhbm``, ``tau_bm``), condensation (``hc``, ``do_evap``), radiation, the
+surface/boundary-layer cluster, and the sponge — with defaults that reproduce
+Isca's Frierson setup byte-for-byte. The one thing still fixed is the convection
+LCL lookup-table geometry (``Tmin``/``Tmax``/``val_inc``), which is precomputed at
+import; see :class:`~jsca.physics.qe_moist_convection.QEMoistConvectionParams`.
 """
 from __future__ import annotations
 
@@ -54,8 +56,10 @@ from jsca.model import held_suarez as _hs
 from jsca.model.idealized_moist_phys import FriersonPhysicsParams
 from jsca.physics.diffusivity import DiffusivityParams
 from jsca.physics.hs_forcing import HsForcingParams
+from jsca.physics.lscale_cond import LscaleCondParams
 from jsca.physics.mixed_layer import MixedLayerParams
 from jsca.physics.monin_obukhov import MOParams
+from jsca.physics.qe_moist_convection import QEMoistConvectionParams
 from jsca.physics.two_stream_gray_rad import GrayRadParams
 
 _FRIERSON_NLEV = len(_fri.FRIERSON_BK) - 1  # 25
@@ -64,32 +68,12 @@ _FRIERSON_NLEV = len(_fri.FRIERSON_BK) - 1  # 25
 # Role-named aliases of the existing frozen physics dataclasses (same hashable,
 # jit-static objects the functional core validates against). Aliases, not
 # subclasses, so their repr still reads e.g. GrayRadParams(...) — a cosmetic
-# rough edge of the prototype.
-GrayRadiation = GrayRadParams          # two_stream_gray_rad_nml
-HeldSuarezForcing = HsForcingParams    # hs_forcing_nml
-
-
-@dataclass(frozen=True)
-class BettsMillerConvection:
-    """Simplified Betts-Miller convection term (``qe_moist_convection``).
-
-    Placeholder config: the port's ``qe_moist_convection`` currently hardcodes the
-    Betts-Miller constants (relaxation time, RH target), so this object only marks
-    the term's presence. Its knobs will be wired once the driver threads them.
-    """
-
-
-@dataclass(frozen=True)
-class LargeScaleCondensation:
-    """Large-scale condensation term (``lscale_cond``).
-
-    Placeholder config for the same reason as :class:`BettsMillerConvection`:
-    ``idealized_moist_phys`` calls ``lscale_cond`` with its defaults, so ``hc`` /
-    ``do_evap`` are not yet threaded. Recorded here for structure.
-    """
-
-    hc: float = 1.0
-    do_evap: bool = True
+# rough edge of the prototype. Every field on these is live: it threads through
+# the driver and changes the run (defaults reproduce Isca's Frierson).
+GrayRadiation = GrayRadParams               # two_stream_gray_rad_nml
+HeldSuarezForcing = HsForcingParams         # hs_forcing_nml
+BettsMillerConvection = QEMoistConvectionParams   # rhbm, tau_bm (qe_moist_convection_nml)
+LargeScaleCondensation = LscaleCondParams   # hc, do_evap (lscale_cond)
 
 
 @dataclass(frozen=True)
@@ -196,6 +180,8 @@ class MoistPhysics:
         # albedo lives twice in Isca's config (radiation up-pass vs slab ocean);
         # take the surface value as the single source of truth.
         return FriersonPhysicsParams(
+            convection=self.convection,
+            condensation=self.condensation,
             gray_rad=self.radiation,
             mo=s.monin_obukhov,
             diff=s.diffusivity,

@@ -54,10 +54,10 @@ import jax.numpy as jnp
 
 from jsca.physics.damping_driver import DampingDriverParams, rayleigh_sponge
 from jsca.physics.diffusivity import DiffusivityParams, diffusivity
-from jsca.physics.lscale_cond import lscale_cond
+from jsca.physics.lscale_cond import LscaleCondParams, lscale_cond
 from jsca.physics.mixed_layer import MixedLayerParams, mixed_layer_step
 from jsca.physics.monin_obukhov import MOParams
-from jsca.physics.qe_moist_convection import qe_moist_convection
+from jsca.physics.qe_moist_convection import QEMoistConvectionParams, qe_moist_convection
 from jsca.physics.surface_flux import surface_flux
 from jsca.physics.two_stream_gray_rad import GrayRadParams, gray_rad_down, gray_rad_up
 from jsca.physics.vert_diff import vert_diff_down, vert_diff_up
@@ -73,6 +73,8 @@ class FriersonPhysicsParams:
     / albedo scalars from the Frierson namelists (``frierson_test_case.py``).
     """
 
+    convection: QEMoistConvectionParams = field(default_factory=QEMoistConvectionParams)
+    condensation: LscaleCondParams = field(default_factory=LscaleCondParams)
     gray_rad: GrayRadParams = field(default_factory=GrayRadParams)
     mo: MOParams = field(default_factory=MOParams)
     diff: DiffusivityParams = field(default_factory=DiffusivityParams)
@@ -148,7 +150,7 @@ def idealized_moist_phys(
 
     # --- 1. convection (previous level; returns increments) --- F90 L862-877
     rain_c, dtemp_c, dq_c, _cflag = qe_moist_convection(
-        t_prev, q_prev, p_full_prev, p_half_prev, delta_t)
+        t_prev, q_prev, p_full_prev, p_half_prev, delta_t, params.convection)
     tg_tmp = t_prev + dtemp_c
     qg_tmp = q_prev + dq_c
     dt_tg = dt_tg + dtemp_c / delta_t
@@ -156,7 +158,9 @@ def idealized_moist_phys(
     precip = rain_c / delta_t
 
     # --- 2. large-scale condensation on the post-convection profile --- F90 L981
-    rain_l, dtemp_l, dq_l = lscale_cond(tg_tmp, qg_tmp, p_full_prev, p_half_prev)
+    rain_l, dtemp_l, dq_l = lscale_cond(
+        tg_tmp, qg_tmp, p_full_prev, p_half_prev,
+        hc=params.condensation.hc, do_evap=params.condensation.do_evap)
     dt_tg = dt_tg + dtemp_l / delta_t
     dt_qg = dt_qg + dq_l / delta_t
     precip = precip + rain_l / delta_t

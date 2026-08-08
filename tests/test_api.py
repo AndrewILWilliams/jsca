@@ -13,6 +13,8 @@ import jsca
 
 def test_moist_config_threads_to_params():
     physics = jsca.MoistPhysics(
+        convection=jsca.BettsMillerConvection(rhbm=0.8, tau_bm=3600.0),
+        condensation=jsca.LargeScaleCondensation(hc=0.9, do_evap=False),
         radiation=jsca.GrayRadiation(solar_constant=1400.0, ir_tau_eq=5.0),
         surface=jsca.SurfaceMixedLayer(depth=10.0, albedo=0.25,
                                        monin_obukhov=jsca.api.MOParams(rich_crit=1.5)),
@@ -20,6 +22,10 @@ def test_moist_config_threads_to_params():
     )
     sim = jsca.Model(jsca.SpectralGrid(trunc=10, dt=720.0), physics=physics).initialize()
     phys = sim._params.phys
+    assert phys.convection.rhbm == 0.8
+    assert phys.convection.tau_bm == 3600.0
+    assert phys.condensation.hc == 0.9
+    assert phys.condensation.do_evap is False
     assert phys.gray_rad.solar_constant == 1400.0
     assert phys.gray_rad.ir_tau_eq == 5.0
     assert phys.mixed_layer.depth == 10.0
@@ -29,6 +35,32 @@ def test_moist_config_threads_to_params():
     assert phys.damping is not None      # sponge built from the reference profile
     # trayfric=-0.5 day -> rfactr = (1/0.5)/86400 s^-1
     assert np.isclose(phys.damping.rfactr, (1.0 / 0.5) / 86400.0)
+
+
+def test_convection_and_condensation_knobs_are_live():
+    """The convection/condensation knobs must actually change the integrated state
+    (default reproduces Isca; a changed knob moves the run)."""
+    base = jsca.configs.frierson(trunc=10, dt=720.0).initialize(humidity=5.0e-3)
+    base.run(steps=6)
+    t_base = base.state.temperature.copy()
+
+    # stronger convective drying / faster relaxation -> a different atmosphere
+    tweaked = jsca.Model(
+        jsca.SpectralGrid(trunc=10, dt=720.0),
+        physics=jsca.MoistPhysics(
+            convection=jsca.BettsMillerConvection(rhbm=0.5, tau_bm=1800.0)),
+    ).initialize(humidity=5.0e-3)
+    tweaked.run(steps=6)
+    assert not np.allclose(t_base, tweaked.state.temperature)
+
+    # large-scale condensation: disabling rain re-evaporation also moves the run
+    no_evap = jsca.Model(
+        jsca.SpectralGrid(trunc=10, dt=720.0),
+        physics=jsca.MoistPhysics(
+            condensation=jsca.LargeScaleCondensation(do_evap=False)),
+    ).initialize(humidity=5.0e-3)
+    no_evap.run(steps=6)
+    assert not np.allclose(t_base, no_evap.state.temperature)
 
 
 def test_dry_forcing_threads_to_params():

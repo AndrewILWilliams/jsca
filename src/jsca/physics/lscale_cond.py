@@ -56,11 +56,27 @@ arithmetic itself is exact.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import jax
 import jax.numpy as jnp
 
 from jsca import constants
 from jsca.physics.sat_vapor_pres import saturation_specific_humidity_and_deriv
+
+
+@dataclass(frozen=True)
+class LscaleCondParams:
+    """Tunable knobs of the Frierson large-scale-condensation namelist.
+
+    A config holder for the :func:`lscale_cond` keyword arguments so the driver
+    and object API can carry them as one hashable object. Defaults are the Isca
+    Frierson values, so ``lscale_cond(..., hc=p.hc, do_evap=p.do_evap)`` with the
+    default ``p`` reproduces the golden fixture.
+    """
+
+    hc: float = 1.0          # relative-humidity condensation threshold
+    do_evap: bool = True     # re-evaporate falling rain in sub-saturated layers
 
 Array = jnp.ndarray
 

@@ -46,6 +46,8 @@ Layout: column physics, **level axis last**; ``Tin``/``qin``/``p_full`` are
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -69,6 +71,23 @@ TMAX = 350.0            # Frierson Tmax: table upper bound
 VAL_INC = 0.01          # F90 val_inc: LCL table spacing
 RHBM = 0.7              # Frierson rhbm: reference relative humidity
 TAU_BM = 7200.0         # Betts-Miller relaxation timescale (s), qe default
+
+
+@dataclass(frozen=True)
+class QEMoistConvectionParams:
+    """Tunable Betts-Miller knobs of the Frierson ``qe_moist_convection_nml``.
+
+    Defaults are Isca's Frierson namelist values (module constants ``RHBM`` /
+    ``TAU_BM``), so the default config reproduces the golden fixture byte-for-byte.
+
+    ``Tmin``/``Tmax``/``val_inc`` are deliberately **not** exposed: they define the
+    module-level LCL lookup table (``LCL_TABLE``, built once at import), so making
+    them tunable needs that table moved into params — a change left for later. They
+    stay fixed at the Frierson values, which is faithful for every standard run.
+    """
+
+    rhbm: float = RHBM        # reference relative humidity toward which q relaxes
+    tau_bm: float = TAU_BM    # Betts-Miller relaxation timescale (s)
 
 
 def _es_closed(t):
@@ -341,7 +360,7 @@ def convective_cape(Tin: Array, qin: Array, p_full: Array, p_half: Array):
 # profiles over the convective layer [kLZB, k_surface], with the Frierson
 # "shallower" shallow-convection scheme and enthalpy-conserving deep adjustment.
 # ==========================================================================
-def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
+def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt, params):
     """Betts-Miller adjustment for one column. Faithful to F90
     set_reference_profiles + Pq/Pt + do_deep_convection + do_shallow_convection.
 
@@ -365,7 +384,7 @@ def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
     def with_cape(_):
         # --- set_reference_profiles (F90 L768) ---
         Tref = Tp
-        eref = RHBM * p_full * rp / (rp + _EPS)
+        eref = params.rhbm * p_full * rp / (rp + _EPS)
         rp_ref = _mixing_ratio(eref, p_full)
         qref_ref = rp_ref / (1.0 + rp_ref)
         qref = jnp.where(below, qref_ref, qin)
@@ -376,17 +395,17 @@ def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
         qref = jnp.where(above, qin, qref)
 
         # --- Pq / Pt (F90 L715, L741) ---
-        deltaq = jnp.where(below, -(qin - qref) * dt / TAU_BM, 0.0)
+        deltaq = jnp.where(below, -(qin - qref) * dt / params.tau_bm, 0.0)
         Pq = jnp.sum(jnp.where(below, deltaq * dp_low, 0.0)) / _GRAV
-        deltaT = jnp.where(below, -(Tin - Tref) * dt / TAU_BM, 0.0)
+        deltaT = jnp.where(below, -(Tin - Tref) * dt / params.tau_bm, 0.0)
         Pt = jnp.sum(jnp.where(below, (_CP / (_HLV + _SMALL)) * deltaT * dp_up, 0.0)) / _GRAV
 
         # ---- deep convection (Pq>0 and Pt>0), F90 do_deep_convection ----
         def deep(_):
             def timescale(_):
                 # Pq > Pt: rescale deltaq, cap precip at Pt (F90 L995).
-                invtau_q = Pt / Pq / TAU_BM
-                dq = jnp.where(below, TAU_BM * invtau_q * deltaq, deltaq)
+                invtau_q = Pt / Pq / params.tau_bm
+                dq = jnp.where(below, params.tau_bm * invtau_q * deltaq, deltaq)
                 return deltaT, dq, Pt, Tref
             def tref_shift(_):
                 # Pq <= Pt: enthalpy-conserving uniform Tref shift (F90 L960);
@@ -394,7 +413,7 @@ def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
                 deltak = -jnp.sum(jnp.where(below, (deltaT + (_HLV / _CP) * deltaq) * dp_up, 0.0)) \
                     / (p_half[ks + 1] - p_half[kLZB])
                 dT = jnp.where(below, deltaT + deltak, deltaT)
-                Tr = jnp.where(below, Tref + deltak * TAU_BM / dt, Tref)
+                Tr = jnp.where(below, Tref + deltak * params.tau_bm / dt, Tref)
                 return dT, deltaq, Pq, Tr
             dT, dq, rain, Tr = jax.lax.cond(Pq > Pt, timescale, tref_shift, None)
             return dT, dq, rain, 2, Tr, qref
@@ -434,7 +453,7 @@ def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
                     / (p_half[ks + 1] - p_half[k_top])
                 apply = topmask & (k_top != ks)
                 dT3 = jnp.where(apply, dT2 + deltak, dT2)
-                Tr3 = jnp.where(apply, Tref_s + deltak * TAU_BM / dt, Tref_s)
+                Tr3 = jnp.where(apply, Tref_s + deltak * params.tau_bm / dt, Tref_s)
                 return dT3, dq2, Tr3, qref_s
 
             def notfound_branch(_):
@@ -466,7 +485,7 @@ def _adjust_column(p_full, p_half, Tin, qin, Tp, rp, kLZB, CAPE, dt):
 
 
 def qe_moist_convection(Tin: Array, qin: Array, p_full: Array, p_half: Array,
-                        dt: float):
+                        dt: float, params: QEMoistConvectionParams = QEMoistConvectionParams()):
     """Frierson simplified Betts-Miller convection (full scheme).
 
     Faithful port of ``qe_moist_convection`` (``SIMPLE_BETTS_MILLER``): the
@@ -478,7 +497,9 @@ def qe_moist_convection(Tin: Array, qin: Array, p_full: Array, p_half: Array,
         Tin, qin, p_full: ``(..., K)`` temperature [K], specific humidity
             [kg/kg], full-level pressure [Pa].
         p_half: ``(..., K+1)`` half-level pressure [Pa].
-        dt: physics timestep [s] (Betts-Miller uses ``tau_bm = 7200`` s).
+        dt: physics timestep [s].
+        params: :class:`QEMoistConvectionParams` (``rhbm``, ``tau_bm``). The
+            default is the Frierson namelist, reproducing the golden fixture.
 
     Returns:
         ``(rain, deltaT, deltaq, convflag)`` — column-integrated convective rain
@@ -507,7 +528,7 @@ def qe_moist_convection(Tin: Array, qin: Array, p_full: Array, p_half: Array,
     def one(pf, ph, t, q, r):
         cape, _cin, klzb, _klcl, Tp, rp = _cape_column(pf, ph, t, r)
         dT, dq, rain, cflag, _Tref, _qref = _adjust_column(
-            pf, ph, t, q, Tp, rp, klzb, cape, dt)
+            pf, ph, t, q, Tp, rp, klzb, cape, dt, params)
         return rain, dT, dq, cflag
 
     rain, dT, dq, cflag = jax.vmap(one)(pf2, ph2, tin2, qin2, rin2)
