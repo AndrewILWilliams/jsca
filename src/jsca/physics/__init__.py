@@ -14,10 +14,14 @@ from .hs_forcing import (
     newtonian_damping,
     rayleigh_damping,
 )
-from .lscale_cond import lscale_cond
+from .lscale_cond import LscaleCondParams, lscale_cond
 from .mixed_layer import MixedLayerParams, mixed_layer_step
 from .monin_obukhov import MOParams, mo_diff, mo_drag, mo_profile
-from .qe_moist_convection import convective_cape, qe_moist_convection
+from .qe_moist_convection import (
+    QEMoistConvectionParams,
+    convective_cape,
+    qe_moist_convection,
+)
 from .sat_vapor_pres import (
     saturation_specific_humidity,
     saturation_specific_humidity_and_deriv,
@@ -42,8 +46,10 @@ __all__ = [
     "saturation_specific_humidity",
     "saturation_specific_humidity_and_deriv",
     "lscale_cond",
+    "LscaleCondParams",
     "convective_cape",
     "qe_moist_convection",
+    "QEMoistConvectionParams",
     "GrayRadParams",
     "gray_rad_down",
     "gray_rad_up",
