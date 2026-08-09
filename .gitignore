@@ -42,3 +42,7 @@ fortran_instrumentation/update_tracers_grid_body.inc
 fortran_instrumentation/dump_ppm_advection_reference
 fortran_instrumentation/dump_ppm_dbg
 fortran_instrumentation/input.nml
+
+# Isca single-column sweep raw outputs (regenerable via scripts/run_isca_column_sweep.py;
+# only the distilled .npz is committed as the CI reference)
+baseline/reference/column_scm_isca_lat*.nc
