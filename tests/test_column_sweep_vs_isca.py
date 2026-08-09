@@ -11,10 +11,12 @@ Reference: ``baseline/reference/column_scm_isca_sweep.npz``, distilled by
 ``scripts/distill_column_sweep.py`` from real Isca runs
 (``scripts/run_isca_column_sweep.py``). CI stays Isca-free (numpy golden data).
 
-Tolerances sit ~30-50% above the measured agreement across all five latitudes
-(worst-case: SST RMSD 0.62 K, T-profile RMSD 0.46 K, q-profile RMSD 0.41 g/kg,
-final SST 0.39 K, final precip 0.39 mm/day). The residual is the documented
-``constant_gust`` / ``do_lcl_diffusivity_depth`` gap (issue #43), not a porting bug.
+After the `t_surf = init_temp + 1 K` init fix, SST agrees to <= 0.045 K at every
+latitude and the T/q profiles to <= 0.03 K outside the tropics. The moist tropics
+(0-15 deg) keep a larger profile residual (T ~0.37 K, q ~0.45 g/kg) from the
+unported ``surface_flux use_virtual_temp=True`` path (a d608*q effect, largest where
+q is largest; issue #43). Tolerances cover that tropical worst case; the SST bounds
+are tight everywhere.
 """
 from pathlib import Path
 
@@ -74,9 +76,15 @@ def test_column_matches_isca_at_latitude(ref, lat):
     n_days = int(ref["n_days"])
     j = _run_jsca(ref["pk"], ref["bk"], ref["lat_deg"][i], n_days)
 
-    assert _rmsd(j["t_surf"], ref["t_surf"][i]) < 0.8                      # K, trajectory
-    assert abs(j["t_surf"][-1] - ref["t_surf"][i][-1]) < 0.6              # K, final SST
-    assert _rmsd(j["T_prof"], ref["temp"][i][-1]) < 0.6                    # K, profile
+    # SST is tight at every latitude after the t_surf = init_temp + 1 K fix
+    # (measured <= 0.045 K). The day-40 T/q *profiles* stay tight outside the
+    # tropics (<= 0.03 K at 45-60 deg) but the moist tropics (0 -15 deg) carry a
+    # larger residual (T ~0.37 K, q ~0.45 g/kg) from the unported surface_flux
+    # use_virtual_temp path -- a d608*q effect, largest where q is largest
+    # (tracked in #43). Tolerances cover that worst case.
+    assert _rmsd(j["t_surf"], ref["t_surf"][i]) < 0.1                      # K, trajectory
+    assert abs(j["t_surf"][-1] - ref["t_surf"][i][-1]) < 0.1              # K, final SST
+    assert _rmsd(j["T_prof"], ref["temp"][i][-1]) < 0.5                    # K, profile
     assert _rmsd(j["q_prof"] * 1e3, ref["sphum"][i][-1] * 1e3) < 0.6      # g/kg, profile
     assert abs((j["precip"][-1] - ref["precip"][i][-1]) * 86400.0) < 0.5  # mm/day
 

@@ -103,33 +103,52 @@ levels, same latitude / timestep / cold-start IC and the canonical `column_test.
 physics (`scripts/compare_column_scm.py`, figure
 `docs/figures/column_scm_vs_isca.png`):
 
+Against the canonical `column_test.py` reference:
+
 | diagnostic | agreement |
 |---|---|
-| day-40 SST | jsca 287.80 K vs Isca 288.02 K (Δ 0.22 K) |
-| day-40 precip | jsca 3.05 vs Isca 3.14 mm/day (~3%) |
-| day-40 T profile | RMSD 0.38 K |
-| day-40 q profile | RMSD 0.12 g/kg |
-| SST trajectory (40 d) | RMSD 0.55 K |
+| day-40 SST | jsca vs Isca (Δ 0.03 K) |
+| day-40 precip | Δ ~0.13 mm/day (~4%) |
+| day-40 T profile | RMSD 0.21 K |
+| day-40 q profile | RMSD 0.20 g/kg |
+| SST trajectory (40 d) | RMSD 0.02 K |
 
-The equilibrium T profile overlies Isca almost exactly; the SST/precip trajectories
-track closely with jsca running slightly cool for the first ~15 days before
-converging. The residual is consistent with two documented differences, not a
-porting bug: (i) jsca's `constant_gust = 0` vs Isca's stateful `vert_turb` gustiness
-during the cold-start transient, and (ii) `do_lcl_diffusivity_depth = True` in
-`column_test` (Isca sets the PBL depth from the convective LCL) which jsca's
-Richardson-based `diffusivity` does not yet implement. Closing those is tracked in
-issue #43, along with the near-bitwise golden step fixture.
+The SST trajectory tracks Isca to hundredths of a kelvin. Getting there meant
+reproducing **Isca's deliberately unstable slab initialisation** — `t_surf =
+init_temp + 1 K` (`idealized_moist_phys.F90` L643, "to allow moisture to quickly
+enter the atmosphere avoiding problems with the convection scheme"). This +1 K, not
+the mechanisms first guessed (`constant_gust`, `do_lcl_diffusivity_depth`, both since
+shown to be negligible here), was the dominant difference: without it the SST
+trajectory is offset ~1 K early, decaying to ~0.3 K by day 40; with it the SST RMSD
+drops from **0.55 K to 0.02 K**. (Diagnosis: Isca's per-step `delta_t_surf` matched
+jsca's to 1e-4 from step 1 — only the *initial* SST differed.) A second, minor config
+match: `lscale_cond do_evap=False` (column_test disables rain re-evaporation), now
+threaded through `idealized_moist_phys`.
+
+The remaining difference is the day-40 T/q **profiles**: RMSD ~0.21 K / 0.20 g/kg at
+the global-average column, growing to ~0.37 K / ~0.45 g/kg in the moist tropics and
+shrinking to ~0.03 K at high latitudes. This is the one surface-layer option
+`column_test.py` uses that jsca does not yet port — `surface_flux
+use_virtual_temp=True`, a `d608*q` virtual-temperature correction to the boundary-layer
+stability (controlled test: it moves the day-40 profile 0.34 K / 0.44 g/kg, and is
+largest where humidity is largest). Porting it — the checkpoint for tightening the
+profile tolerances toward the SST level — and the near-bitwise golden step fixture are
+tracked in issue #43.
 
 ### CI regression gate
 
-`tests/test_column_vs_isca.py` runs this comparison on every commit and asserts jsca
-stays within tolerance of the Isca trajectory (T-profile RMSD < 0.6 K, SST RMSD
-< 0.8 K, q-profile RMSD < 0.3 g/kg, final precip within 0.3 mm/day) — so a physics
-regression fails CI rather than being discovered later. **CI never needs Isca
-itself**: it validates against the committed golden trajectory
-`baseline/reference/column_scm_isca_t264.npz` (numpy-only, distilled from the raw
-Isca NetCDF), the same posture as the frierson climatology references. Tightening
-these tolerances is the checkpoint for closing the two config gaps above.
+`tests/test_column_vs_isca.py` (single column) and `tests/test_column_sweep_vs_isca.py`
+(five latitudes) run this comparison on every commit and assert jsca stays within
+tolerance of the Isca trajectory — after the `t_surf` fix, SST RMSD < 0.1 K
+(measured 0.02), and the profile tolerances (T-profile RMSD < 0.3 K, q < 0.3 g/kg;
+< 0.5 K / 0.6 g/kg across the sweep to cover the moist tropics) sized to the
+`use_virtual_temp` gap — so a physics regression fails CI rather than being
+discovered later. **CI never needs Isca itself**: it validates against committed
+golden trajectories
+(`baseline/reference/column_scm_isca_t264.npz`, `…_sweep.npz`; numpy-only, distilled
+from the raw Isca NetCDF), the same posture as the frierson climatology references.
+The remaining tropical-profile tolerance headroom is the `use_virtual_temp` gap;
+tightening it further is the checkpoint for porting that path (#43).
 
 ### Reproducing / regenerating the Isca reference
 

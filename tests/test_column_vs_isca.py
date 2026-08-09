@@ -6,19 +6,21 @@ equilibrium profiles within tolerance. This is the CI gate that keeps the SCM
 faithful to Isca as the code evolves.
 
 The reference (``baseline/reference/column_scm_isca_t264.npz``) is distilled from a
-real Isca ``column_test.py`` run (pinned commit a290bc3) --
-``scripts/run_isca_column_reference.py`` builds/runs Isca,
+real Isca ``column_test.py`` run (pinned commit a290bc3) at the **canonical** column
+config. ``scripts/run_isca_column_reference.py`` builds/runs Isca,
 ``scripts/distill_column_reference.py`` reduces the NetCDF to this numpy file. CI
 never needs Isca itself: it validates against the committed golden trajectory
 (the same posture as the frierson climatology references). To regenerate the
 reference, rebuild Isca and re-run those two scripts.
 
-Tolerances sit a little above the measured agreement (T-profile RMSD 0.38 K, SST
-RMSD 0.55 K, q-profile RMSD 0.12 g/kg, final precip within 0.1 mm/day) so the test
-catches a real physics regression while tolerating float/platform noise. The
-residual is a documented config gap (constant_gust=0; do_lcl_diffusivity_depth),
-tracked in issue #43, not a porting bug -- tightening these tolerances is the
-checkpoint for closing that gap.
+Two differences set the tolerances. The **dominant** one was Isca's
+deliberately-unstable slab init (``t_surf = init_temp + 1 K``,
+``idealized_moist_phys.F90`` L643); reproducing it dropped the SST RMSD from 0.55 K
+to **0.02 K** (now asserted < 0.1 K). The **remaining** one is the surface_flux
+``use_virtual_temp=True`` path the canonical config uses but jsca does not yet port
+(a d608*q virtual-temperature correction, ~0.34 K here) -- it sets the profile
+tolerances (measured T-profile RMSD 0.21 K, q 0.20 g/kg) and is tracked in issue #43;
+porting it is the checkpoint for tightening them toward the SST level.
 """
 from pathlib import Path
 
@@ -88,18 +90,21 @@ def test_reference_is_isca_31_even_sigma(isca):
 
 
 def test_temperature_profile_matches_isca(isca, jsca_run):
-    assert _rmsd(jsca_run["T_prof"], isca["temp"][-1]) < 0.6      # K
+    # measured 0.21 K vs the canonical (use_virtual_temp=True) reference; the gap is
+    # the unported use_virtual_temp path (#43). SST is separately tight (below).
+    assert _rmsd(jsca_run["T_prof"], isca["temp"][-1]) < 0.3      # K
 
 
 def test_humidity_profile_matches_isca(isca, jsca_run):
-    assert _rmsd(jsca_run["q_prof"] * 1e3, isca["sphum"][-1] * 1e3) < 0.3   # g/kg
+    assert _rmsd(jsca_run["q_prof"] * 1e3, isca["sphum"][-1] * 1e3) < 0.3   # g/kg (measured 0.20)
 
 
 def test_sst_trajectory_matches_isca(isca, jsca_run):
-    assert _rmsd(jsca_run["t_surf"], isca["t_surf"]) < 0.8       # K over 40 days
-    assert abs(jsca_run["t_surf"][-1] - isca["t_surf"][-1]) < 0.5  # final SST
+    # SST agreement after the t_surf = init_temp + 1 K fix (measured 0.03 K)
+    assert _rmsd(jsca_run["t_surf"], isca["t_surf"]) < 0.1       # K over 40 days
+    assert abs(jsca_run["t_surf"][-1] - isca["t_surf"][-1]) < 0.1  # final SST
 
 
 def test_precip_matches_isca(isca, jsca_run):
-    # final-day precip within 0.3 mm/day (kg/m^2/s -> mm/day = *86400)
-    assert abs((jsca_run["precip"][-1] - isca["precip"][-1]) * 86400.0) < 0.3
+    # final-day precip within 0.2 mm/day (kg/m^2/s -> mm/day = *86400); measured 0.08
+    assert abs((jsca_run["precip"][-1] - isca["precip"][-1]) * 86400.0) < 0.2

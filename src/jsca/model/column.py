@@ -148,6 +148,7 @@ def build_column(
     q_decrease_only: bool = True,           # column_test.py
     mixed_layer_depth: float = 2.5,         # column_test mixed_layer_nml
     albedo: float = 0.30,                   # column_test mixed_layer_nml albedo_value
+    do_evap: bool = False,                  # column_test lscale_cond_nml do_evap
     vert_difference_option: str = "simmons_and_burridge",
     **phys_kwargs,
 ) -> ColumnModel:
@@ -202,6 +203,7 @@ def build_column(
         mixed_layer=MixedLayerParams(depth=mixed_layer_depth, albedo=albedo),
         damping=damping_driver_init(np.asarray(p_full_1d)),
         albedo=albedo,
+        do_evap=do_evap,
         **phys_kwargs,
     )
 
@@ -247,17 +249,17 @@ def initial_state(
       (L78-79): ``ps = exp(ln(p_ref) - Phi_s / (Rd * T0))``. Held fixed.
     * **humidity** uniform ``initial_sphum`` (``column.F90`` L694). Isca's SCM
       seeds ``sphum`` uniformly rather than the aquaplanet's 2e-6.
-    * **slab SST** ``t_surf``: the ``mixed_layer`` initial value. With
-      ``prescribe_initial_dist = False`` (the column_test setting) and no restart,
-      Isca's ``mixed_layer`` initialises the slab **from the lowest model-level
-      temperature** (``mixed_layer.F90``; the run logs
-      ``"initializing from lowest model level temp"``), i.e. the uniform
-      ``initial_temperature`` -- *not* ``tconst``. Verified against a real Isca
-      column run (``baseline/reference/column_scm_isca_daily_t264.nc``): day-1
-      ``t_surf`` tracks the lowest-level air temperature, not 285 K. So the default
-      here is ``initial_temperature``; pass ``t_surf`` explicitly (e.g. ``tconst``)
-      to override. Passed separately because the ocean is the surface's state, not
-      the column's.
+    * **slab SST** ``t_surf``: Isca initialises the slab (``mixed_layer_bc`` case,
+      no restart) as ``t_surf = t_surf_init + 1.0`` where ``t_surf_init`` is the
+      lowest model-level temperature (``idealized_moist_phys.F90`` L643) -- a
+      **deliberately +1 K unstable** start "to allow moisture to quickly enter the
+      atmosphere avoiding problems with the convection scheme" (Isca's comment). So
+      the default here is ``initial_temperature + 1.0``. This +1 K is the single
+      largest jsca-vs-Isca difference if omitted: it offsets the entire SST
+      trajectory by ~1 K early (decaying to ~0.3 K by day 40). Verified against a
+      real Isca column run -- with the +1 K the day-40 SST RMSD drops from 0.55 K
+      to 0.02 K. Pass ``t_surf`` explicitly to override. Passed separately because
+      the ocean is the surface's state, not the column's.
     """
     k, nlat, nlon = m.num_levels, m.nlat, m.nlon
     u = np.zeros((nlat, nlon, k))
@@ -272,10 +274,9 @@ def initial_state(
     q_col = np.full((nlat, nlon, k), float(initial_sphum))
 
     stack = lambda a: jnp.stack([jnp.asarray(a), jnp.asarray(a)], axis=-1)  # noqa: E731
-    # Isca mixed_layer (prescribe_initial_dist=False, no restart) seeds the slab
-    # from the lowest model-level temperature = initial_temperature (verified
-    # against the real column run). Override via t_surf for a prescribed SST.
-    tsurf = float(initial_temperature) if t_surf is None else t_surf
+    # Isca's deliberately-unstable slab init: lowest-level temp + 1 K
+    # (idealized_moist_phys.F90 L643). Override via t_surf for a prescribed SST.
+    tsurf = float(initial_temperature) + 1.0 if t_surf is None else t_surf
     return (
         jnp.asarray(u), jnp.asarray(v),
         stack(t_col), stack(q_col), jnp.asarray(ps),
