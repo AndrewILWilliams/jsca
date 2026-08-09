@@ -66,8 +66,11 @@ import jax
 import jax.numpy as jnp
 
 from jsca import constants
+from jsca.physics.astronomy import AstronomyParams, diurnal_solar
 
 Array = jnp.ndarray
+
+TWOPI = 2.0 * jnp.pi
 
 #: Standard reference pressure ``pstd_mks`` (Pa) — Isca ``constants.F90`` L263.
 PSTD_MKS = 101325.0
@@ -96,6 +99,18 @@ class GrayRadParams:
       share the ``B_FRIERSON, B_BYRNE`` SW branch, F90 L479-492), and the down/up
       LW integration is the same two-stream recurrence — only ``lw_dtrans``
       changes. Requires ``q`` to be passed to :func:`gray_rad_down`.
+
+    ``do_seasonal`` (F90 L417-448) switches the shortwave insolation from the
+    default perpetual-equinox annual-mean profile to the astronomically computed
+    seasonal + diurnal cycle (via :mod:`jsca.physics.astronomy`). When on,
+    :func:`gray_rad_down` must be given the model time (``time_seconds``) and the
+    precomputed orbital-angle table (``orb_angle``); ``solday >= 0`` freezes the
+    orbital position at that day of year (a perpetual season with a diurnal cycle),
+    ``equinox_day`` places the NH autumn equinox in the year, and
+    ``use_time_average_coszen`` averages the zenith angle over the radiation step
+    ``dt`` (needs ``dt_rad_radians`` passed too) rather than sampling it
+    instantaneously. ``astro`` holds the orbital parameters; ``year_in_s`` /
+    ``day_in_s`` set the calendar (default: Isca's 360-day ``thirty_day`` year).
     """
 
     rad_scheme: str = "frierson"
@@ -116,6 +131,14 @@ class GrayRadParams:
     bog_b: float = 1997.9
     bog_mu: float = 1.0
     carbon_conc: float = 360.0   # CO2 concentration (ppmv); F90 L104
+    # --- seasonal / diurnal insolation (do_seasonal); F90 L83-87, L417-448 ---
+    do_seasonal: bool = False
+    solday: int = -10                       # perpetual day-of-year if >= 0 (F90 L84)
+    equinox_day: float = 0.75               # NH autumn equinox, fraction of year (F90 L85)
+    use_time_average_coszen: bool = False   # time-average coszen over dt (F90 L86)
+    year_in_s: float = 360.0 * 86400.0      # calendar year length (thirty_day)
+    day_in_s: float = 86400.0
+    astro: AstronomyParams = AstronomyParams()
 
 
 @dataclass(frozen=True)
@@ -167,21 +190,60 @@ def _lw_up_integral(dtrans: Array, b: Array, b_surf: Array) -> Array:
     return jnp.moveaxis(full, 0, -1)
 
 
+def _seasonal_insolation(params: GrayRadParams, lat: Array, lon: Array,
+                         time_seconds: Array, orb_angle: Array,
+                         dt_rad_radians: Array | None):
+    """TOA insolation on the ``do_seasonal`` path (F90 L417-448).
+
+    Converts the model time to the time of day (``gmt``) and orbital position
+    (``time_since_ae``), calls :func:`jsca.physics.astronomy.diurnal_solar` for
+    the cosine of the zenith angle, and returns ``solar_constant * cosz``.
+    ``solday >= 0`` freezes the orbital position (perpetual season).
+    """
+    day_in_s = params.day_in_s
+    frac_of_day = jnp.mod(time_seconds, day_in_s) / day_in_s
+    if params.solday >= 0:
+        frac_of_year = (params.solday * day_in_s) / params.year_in_s
+    else:
+        frac_of_year = time_seconds / params.year_in_s
+    gmt = jnp.abs(jnp.mod(frac_of_day, 1.0)) * TWOPI
+    time_since_ae = jnp.mod(frac_of_year - params.equinox_day, 1.0) * TWOPI
+    dt = dt_rad_radians if params.use_time_average_coszen else None
+    cosz, _fracday, _rrsun = diurnal_solar(
+        params.astro, orb_angle, lat, lon, gmt, time_since_ae, dt)
+    return params.solar_constant * cosz
+
+
 def gray_rad_down(params: GrayRadParams, lat: Array, p_half: Array, t: Array,
-                  albedo: Array, q: Array | None = None):
+                  albedo: Array, q: Array | None = None,
+                  lon: Array | None = None, time_seconds: Array | None = None,
+                  orb_angle: Array | None = None,
+                  dt_rad_radians: Array | None = None):
     """Down pass: SW + downward LW → surface fluxes (F90 ``..._down``).
 
     ``q`` (specific humidity ``(..., K)``) is required for ``rad_scheme="byrne"``
-    and ignored by ``"frierson"``. Returns ``(net_surf_sw_down, surf_lw_down,
-    state)`` — the surface downward SW absorbed ``(1-albedo)*sw_down(sfc)`` and
-    downward LW ``(...)`` [W/m^2], and a :class:`RadDownState` for the up pass.
+    and ignored by ``"frierson"``. ``lon``/``time_seconds``/``orb_angle`` (and, for
+    ``use_time_average_coszen``, ``dt_rad_radians``) are required for
+    ``do_seasonal=True`` and unused otherwise. Returns ``(net_surf_sw_down,
+    surf_lw_down, state)`` — the surface downward SW absorbed
+    ``(1-albedo)*sw_down(sfc)`` and downward LW ``(...)`` [W/m^2], and a
+    :class:`RadDownState` for the up pass.
     """
     ph = p_half / PSTD_MKS                                 # normalized pressure (..., K+1)
 
-    # --- shortwave (Frierson and Byrne share this branch, F90 L479-492) ---
-    p2 = (1.0 - 3.0 * jnp.sin(lat) ** 2) / 4.0
-    insol = 0.25 * params.solar_constant * (
-        1.0 + params.del_sol * p2 + params.del_sw * jnp.sin(lat))
+    # --- shortwave insolation at TOA ---
+    if params.do_seasonal:
+        if lon is None or time_seconds is None or orb_angle is None:
+            raise ValueError("do_seasonal=True needs lon, time_seconds, orb_angle")
+        insol = _seasonal_insolation(params, lat, lon, time_seconds, orb_angle,
+                                     dt_rad_radians)
+    else:
+        # perpetual-equinox annual-mean profile (Frierson/Byrne, F90 L452-455)
+        p2 = (1.0 - 3.0 * jnp.sin(lat) ** 2) / 4.0
+        insol = 0.25 * params.solar_constant * (
+            1.0 + params.del_sol * p2 + params.del_sw * jnp.sin(lat))
+
+    # --- shortwave attenuation (Frierson and Byrne share this, F90 L479-492) ---
     sw_tau_0 = (1.0 - params.sw_diff * jnp.sin(lat) ** 2) * params.atm_abs
     sw_tau = sw_tau_0[..., None] * ph ** params.solar_exponent
     sw_down = insol[..., None] * jnp.exp(-sw_tau)          # (..., K+1)
@@ -246,12 +308,17 @@ def gray_rad_up(params: GrayRadParams, p_half: Array, t_surf: Array, albedo: Arr
 
 def two_stream_gray_rad(params: GrayRadParams, lat: Array, p_half: Array,
                         t: Array, t_surf: Array, albedo: Array,
-                        q: Array | None = None):
+                        q: Array | None = None,
+                        lon: Array | None = None, time_seconds: Array | None = None,
+                        orb_angle: Array | None = None,
+                        dt_rad_radians: Array | None = None):
     """Full grey-radiation step (down then up), convenience wrapper.
 
-    ``q`` (specific humidity) is required for ``rad_scheme="byrne"``. Returns
+    ``q`` (specific humidity) is required for ``rad_scheme="byrne"``;
+    ``lon``/``time_seconds``/``orb_angle`` for ``do_seasonal=True``. Returns
     ``(tdt_rad, net_surf_sw_down, surf_lw_down, olr, net_lw_surf)``.
     """
-    net_sw, lw_dn, state = gray_rad_down(params, lat, p_half, t, albedo, q)
+    net_sw, lw_dn, state = gray_rad_down(params, lat, p_half, t, albedo, q,
+                                         lon, time_seconds, orb_angle, dt_rad_radians)
     tdt_rad, olr, net_lw_surf = gray_rad_up(params, p_half, t_surf, albedo, state)
     return tdt_rad, net_sw, lw_dn, olr, net_lw_surf

@@ -122,6 +122,10 @@ def idealized_moist_phys(
     gust: Array,
     delta_t: float,
     dt_real: float,
+    # do_seasonal insolation (params.gray_rad.do_seasonal): model time [s] and the
+    # precomputed orbital-angle table; ignored on the default perpetual-equinox path.
+    time_seconds: Array | None = None,
+    orb_angle: Array | None = None,
 ) -> MoistPhysicsOutput:
     """One Frierson column-physics step (F90 ``idealized_moist_phys`` L819-1337).
 
@@ -170,8 +174,12 @@ def idealized_moist_phys(
     # q_prev is passed for rad_scheme="byrne" (humidity-dependent LW); the
     # default Frierson scheme ignores it. Uses the previous time level, matching
     # the temperature argument (F90 calls radiation on the same tracer level).
+    # lon2d/time_seconds/orb_angle drive the do_seasonal insolation; dt_rad_radians
+    # is the radiation step in radians-of-a-day for use_time_average_coszen.
+    dt_rad_radians = (dt_real / params.gray_rad.day_in_s) * (2.0 * jnp.pi)
     net_surf_sw_down, surf_lw_down, rad_state = gray_rad_down(
-        params.gray_rad, lat2d, p_half_cur, t_prev, albedo, q_prev)
+        params.gray_rad, lat2d, p_half_cur, t_prev, albedo, q_prev,
+        lon2d, time_seconds, orb_angle, dt_rad_radians)
 
     # --- 4. surface fluxes (previous lowest level + t_surf) --- F90 L1077
     z_atm = z_full_cur[..., -1]              # height of the lowest level (z_surf = 0)

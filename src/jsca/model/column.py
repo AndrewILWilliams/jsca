@@ -79,8 +79,10 @@ from jsca.model.idealized_moist_phys import (
     FriersonPhysicsParams,
     idealized_moist_phys,
 )
+from jsca.physics.astronomy import AstronomyParams, build_orbit_angle
 from jsca.physics.damping_driver import damping_driver_init
 from jsca.physics.mixed_layer import MixedLayerParams
+from jsca.physics.two_stream_gray_rad import GrayRadParams
 
 Array = jnp.ndarray
 
@@ -129,6 +131,9 @@ class ColumnModel:
     raw_filter_coeff: float
     q_decrease_only: bool
     vert_difference_option: str
+    # Precomputed orbital-angle table for do_seasonal insolation (None when the
+    # perpetual-equinox default is used); numeric, threaded to the radiation call.
+    orb_angle: Array | None
 
 
 def build_column(
@@ -151,6 +156,12 @@ def build_column(
     do_evap: bool = False,                  # column_test lscale_cond_nml do_evap
     use_virtual_temp: bool = True,          # column_test surface_flux_nml use_virtual_temp
     do_lcl_diffusivity_depth: bool = True,  # column_test idealized_moist_phys_nml
+    do_seasonal: bool = False,              # two_stream_gray_rad_nml do_seasonal
+    solday: int = -10,                      # perpetual day-of-year if >= 0
+    equinox_day: float = 0.75,
+    use_time_average_coszen: bool = False,
+    year_in_s: float = 360.0 * 86400.0,     # thirty_day calendar (column_test)
+    astro: AstronomyParams = AstronomyParams(),
     vert_difference_option: str = "simmons_and_burridge",
     **phys_kwargs,
 ) -> ColumnModel:
@@ -201,6 +212,18 @@ def build_column(
     # off, as in the SCM, but damping_driver_init needs a reference profile).
     _, _, p_full_1d, _ = pressure_variables(
         pk, bk, jnp.asarray(constants.PSTD_MKS), vert_difference_option)
+    # Grey-radiation config: build a GrayRadParams carrying do_seasonal (unless the
+    # caller passed an explicit gray_rad via phys_kwargs). do_seasonal switches the
+    # insolation to the astronomical seasonal+diurnal cycle; orb_angle (below) is
+    # the precomputed orbital table it needs.
+    gray_rad = phys_kwargs.pop("gray_rad", None)
+    if gray_rad is None:
+        gray_rad = GrayRadParams(
+            do_seasonal=do_seasonal, solday=solday, equinox_day=equinox_day,
+            use_time_average_coszen=use_time_average_coszen,
+            year_in_s=year_in_s, astro=astro)
+    orb_angle = build_orbit_angle(gray_rad.astro) if gray_rad.do_seasonal else None
+
     phys = FriersonPhysicsParams(
         mixed_layer=MixedLayerParams(depth=mixed_layer_depth, albedo=albedo),
         damping=damping_driver_init(np.asarray(p_full_1d)),
@@ -208,6 +231,7 @@ def build_column(
         do_evap=do_evap,
         use_virtual_temp=use_virtual_temp,
         do_lcl_diffusivity_depth=do_lcl_diffusivity_depth,
+        gray_rad=gray_rad,
         **phys_kwargs,
     )
 
@@ -226,6 +250,7 @@ def build_column(
         raw_filter_coeff=raw_filter_coeff,
         q_decrease_only=q_decrease_only,
         vert_difference_option=vert_difference_option,
+        orb_angle=orb_angle,
     )
 
 
@@ -288,12 +313,16 @@ def initial_state(
     )
 
 
-def _step_full(m: ColumnModel, state, delta_t: float | None = None):
+def _step_full(m: ColumnModel, state, delta_t: float | None = None,
+               time_seconds: Array | None = None):
     """One SCM step, returning ``(new_state, precip)``. ``step`` drops ``precip``.
 
     Reproduces the ``atmosphere.F90`` COLUMN_MODEL flow (L300-323): physics on the
     previous level with the current geopotential heights, then the grid-space
     leapfrog of T and q only; winds and surface pressure are untouched.
+
+    ``time_seconds`` (elapsed model time) drives the ``do_seasonal`` insolation; it
+    is ignored on the default perpetual-equinox path.
     """
     u, v, tg, qg, ps, t_surf = state
     prev, cur, fut = 0, 1, 0                 # slot roll, identical to frierson.py
@@ -316,7 +345,8 @@ def _step_full(m: ColumnModel, state, delta_t: float | None = None):
     gust = m.phys.gust_const * jnp.ones(m.lat2d.shape)
     phys = idealized_moist_phys(
         m.phys, m.lat2d, m.lon2d, u, v, t_prev, q_prev,
-        ph, pf, ph, pf, z_full, z_half, t_surf, gust, dtl, m.dt)
+        ph, pf, ph, pf, z_full, z_half, t_surf, gust, dtl, m.dt,
+        time_seconds=time_seconds, orb_angle=m.orb_angle)
 
     rc, traw, raw = m.robert_coeff, m.tracer_robert_coeff, m.raw_filter_coeff
     tg = leapfrog(tg, phys.dt_tg, prev, cur, fut, dtl, rc, raw)
@@ -331,49 +361,70 @@ def _step_full(m: ColumnModel, state, delta_t: float | None = None):
     return new_state, phys.precip
 
 
-def step(m: ColumnModel, state, delta_t: float | None = None):
+def step(m: ColumnModel, state, delta_t: float | None = None,
+         time_seconds: Array | None = None):
     """One single-column step. ``state = (u, v, tg, qg, ps, t_surf)``."""
-    return _step_full(m, state, delta_t)[0]
+    return _step_full(m, state, delta_t, time_seconds)[0]
 
 
-def integrate(m: ColumnModel, state, n_steps: int, cold_start: bool = False):
+def integrate(m: ColumnModel, state, n_steps: int, cold_start: bool = False,
+              time0: float = 0.0):
     """Integrate ``n_steps`` with ``lax.scan``. ``cold_start`` runs the first step
-    as Isca's forward start-up step (``delta_t = dt``, ``column.F90`` L259-263)."""
-    jstep = jax.jit(lambda s: step(m, s))
+    as Isca's forward start-up step (``delta_t = dt``, ``column.F90`` L259-263).
+
+    ``time0`` is the elapsed model time [s] at the first step; the running time
+    advances by ``dt`` each step and drives the ``do_seasonal`` insolation (it is
+    inert when do_seasonal is off, so non-seasonal runs are unchanged)."""
+    jstep = jax.jit(lambda s, t: step(m, s, time_seconds=t))
+    t = time0
     if cold_start and n_steps > 0:
-        state = jax.jit(lambda s: step(m, s, m.dt))(state)
+        state = jax.jit(lambda s, t: step(m, s, m.dt, t))(state, t)
+        t = t + m.dt
         n_steps -= 1
-    state, _ = jax.lax.scan(lambda s, _: (jstep(s), None), state, None, length=n_steps)
+
+    def body(carry, _):
+        s, tt = carry
+        return (jstep(s, tt), tt + m.dt), None
+
+    (state, _), _ = jax.lax.scan(body, (state, t), None, length=n_steps)
     return state
 
 
 def integrate_climatology(m: ColumnModel, state, spinup_steps: int, avg_steps: int,
-                          cold_start: bool = True):
+                          cold_start: bool = True, time0: float = 0.0):
     """Spin up, then accumulate the time-mean column climatology over the averaging
     window. Returns ``(state, clim)`` with time-mean fields: ``temp``/``sphum``
     ``(nlat, nlon, K)`` at the current level, ``t_surf`` ``(nlat, nlon)``, and
-    ``precip`` ``(nlat, nlon)`` (kg/m^2/s). Everything runs inside ``lax.scan``."""
+    ``precip`` ``(nlat, nlon)`` (kg/m^2/s). Everything runs inside ``lax.scan``.
+
+    ``time0`` seeds the model clock that drives ``do_seasonal`` (inert otherwise)."""
+    t = time0
     if cold_start:
-        state = jax.jit(lambda s: step(m, s, m.dt))(state)
+        state = jax.jit(lambda s, tt: step(m, s, m.dt, tt))(state, t)
+        t = t + m.dt
         spinup_steps = max(spinup_steps - 1, 0)
 
-    jstep = jax.jit(lambda s: step(m, s))
-    state, _ = jax.lax.scan(lambda s, _: (jstep(s), None), state, None, length=spinup_steps)
+    jstep = jax.jit(lambda s, tt: step(m, s, time_seconds=tt))
+
+    def spin(carry, _):
+        s, tt = carry
+        return (jstep(s, tt), tt + m.dt), None
+    (state, t), _ = jax.lax.scan(spin, (state, t), None, length=spinup_steps)
 
     def diag(s):
         u, v, tg, qg, ps, t_surf = s
         return {"temp": tg[..., 1], "sphum": qg[..., 1], "t_surf": t_surf}
 
     def body(carry, _):
-        s, acc = carry
-        s2, precip = _step_full(m, s)
+        s, acc, tt = carry
+        s2, precip = _step_full(m, s, time_seconds=tt)
         d = diag(s2)
         d["precip"] = precip
         acc = {kk: acc[kk] + d[kk] for kk in acc}
-        return (s2, acc), None
+        return (s2, acc, tt + m.dt), None
 
     acc0 = {**{kk: jnp.zeros_like(vv) for kk, vv in diag(state).items()},
             "precip": jnp.zeros(m.lat2d.shape)}
-    (state, acc), _ = jax.lax.scan(body, (state, acc0), None, length=avg_steps)
+    (state, acc, _), _ = jax.lax.scan(body, (state, acc0, t), None, length=avg_steps)
     clim = {kk: np.asarray(vv) / avg_steps for kk, vv in acc.items()}
     return state, clim
