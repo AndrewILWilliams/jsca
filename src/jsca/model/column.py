@@ -247,10 +247,17 @@ def initial_state(
       (L78-79): ``ps = exp(ln(p_ref) - Phi_s / (Rd * T0))``. Held fixed.
     * **humidity** uniform ``initial_sphum`` (``column.F90`` L694). Isca's SCM
       seeds ``sphum`` uniformly rather than the aquaplanet's 2e-6.
-    * **slab SST** ``t_surf``: the ``mixed_layer`` initial value; with
-      ``prescribe_initial_dist = False`` (column_test) that is the uniform
-      ``tconst`` (285 K). Passed separately because the ocean is the surface's
-      state, not the column's.
+    * **slab SST** ``t_surf``: the ``mixed_layer`` initial value. With
+      ``prescribe_initial_dist = False`` (the column_test setting) and no restart,
+      Isca's ``mixed_layer`` initialises the slab **from the lowest model-level
+      temperature** (``mixed_layer.F90``; the run logs
+      ``"initializing from lowest model level temp"``), i.e. the uniform
+      ``initial_temperature`` -- *not* ``tconst``. Verified against a real Isca
+      column run (``baseline/reference/column_scm_isca_daily_t264.nc``): day-1
+      ``t_surf`` tracks the lowest-level air temperature, not 285 K. So the default
+      here is ``initial_temperature``; pass ``t_surf`` explicitly (e.g. ``tconst``)
+      to override. Passed separately because the ocean is the surface's state, not
+      the column's.
     """
     k, nlat, nlon = m.num_levels, m.nlat, m.nlon
     u = np.zeros((nlat, nlon, k))
@@ -265,9 +272,10 @@ def initial_state(
     q_col = np.full((nlat, nlon, k), float(initial_sphum))
 
     stack = lambda a: jnp.stack([jnp.asarray(a), jnp.asarray(a)], axis=-1)  # noqa: E731
-    # column_test mixed_layer_nml tconst = 285 K (prescribe_initial_dist = False, so
-    # the slab starts uniform rather than with the aquaplanet meridional gradient).
-    tsurf = 285.0 if t_surf is None else t_surf
+    # Isca mixed_layer (prescribe_initial_dist=False, no restart) seeds the slab
+    # from the lowest model-level temperature = initial_temperature (verified
+    # against the real column run). Override via t_surf for a prescribed SST.
+    tsurf = float(initial_temperature) if t_surf is None else t_surf
     return (
         jnp.asarray(u), jnp.asarray(v),
         stack(t_col), stack(q_col), jnp.asarray(ps),

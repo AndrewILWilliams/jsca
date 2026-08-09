@@ -73,22 +73,52 @@ column-step fixture needs a full Isca build; the driver stub for the new
 initial-condition arithmetic is
 `fortran_instrumentation/dump_column_init_reference.F90` (fixtures pending).
 
-## Surfaced ambiguity: the vertical coordinate
+## Resolved: the vertical coordinate (was a flagged ambiguity)
 
 The canonical Isca column namelist
 (`exp/test_cases/column_test_case/column_test.py`) sets **both**
 `column_nml:num_levels = 31` (with the default `vert_coord_option = 'even_sigma'`)
 **and** an explicit 25-level `vert_coordinate_nml`. Because `even_sigma` never reads
-that namelist, Isca as written would actually run **31 even-sigma levels** there, and
-the 26-entry `pk`/`bk` would be silently ignored. jsca does not replicate that latent
-inconsistency:
+that namelist, the 26-entry `pk`/`bk` would be silently ignored.
 
-* `build_column()` **defaults to the explicit 25-level Frierson coordinate**
-  (`COLUMN_BK`), so the physics runs on the same levels it was fixture-validated on.
-* To reproduce the levels Isca's *default* column run really uses, pass
-  `vert_coord_option='even_sigma', num_levels=31, pk=None, bk=None`.
+**Confirmed by a real Isca column run** (2026-08; output archived at
+`baseline/reference/column_scm_isca_daily_t264.nc`): Isca runs **31 even-sigma
+levels** (`bk = [0, 1/31, …, 1]`) and ignores the 25-level table, exactly as
+hypothesised. `build_column()` therefore still defaults to the 25-level Frierson
+coordinate (the levels the physics kernels were fixture-validated on), and
+`scripts/compare_column_scm.py` reads Isca's actual `pk`/`bk` from the reference
+file so the comparison is on Isca's real 31 even-sigma levels. To reproduce Isca's
+default column grid directly, pass
+`vert_coord_option='even_sigma', num_levels=31, pk=None, bk=None`.
 
-This is flagged rather than silently resolved (CLAUDE.md "surface tradeoffs").
+A second thing the run pinned down: with `prescribe_initial_dist = False` and no
+restart, Isca's `mixed_layer` seeds the slab SST from the **lowest model-level
+temperature** (= `initial_temperature`, 264 K), not `tconst` (285 K).
+`initial_state` now defaults `t_surf` to `initial_temperature` to match.
+
+## Validation against Isca (Tier-2)
+
+A 40-day single-column spin-up, jsca vs a real Isca run on Isca's own 31 even-sigma
+levels, same latitude / timestep / cold-start IC and the canonical `column_test.py`
+physics (`scripts/compare_column_scm.py`, figure
+`docs/figures/column_scm_vs_isca.png`):
+
+| diagnostic | agreement |
+|---|---|
+| day-40 SST | jsca 287.80 K vs Isca 288.02 K (Δ 0.22 K) |
+| day-40 precip | jsca 3.05 vs Isca 3.14 mm/day (~3%) |
+| day-40 T profile | RMSD 0.38 K |
+| day-40 q profile | RMSD 0.12 g/kg |
+| SST trajectory (40 d) | RMSD 0.55 K |
+
+The equilibrium T profile overlies Isca almost exactly; the SST/precip trajectories
+track closely with jsca running slightly cool for the first ~15 days before
+converging. The residual is consistent with two documented differences, not a
+porting bug: (i) jsca's `constant_gust = 0` vs Isca's stateful `vert_turb` gustiness
+during the cold-start transient, and (ii) `do_lcl_diffusivity_depth = True` in
+`column_test` (Isca sets the PBL depth from the convective LCL) which jsca's
+Richardson-based `diffusivity` does not yet implement. Closing those is tracked in
+issue #43, along with the near-bitwise golden step fixture.
 
 ## Usage
 
