@@ -138,10 +138,23 @@ latitudes. Interestingly this is **not** a config toggle — with every namelist
 now matched, turning `use_virtual_temp` on changed the column T profile by only
 ~0.04 K RMSD (vs ~0.12 K in Isca's own on/off test), because the perturbation is
 amplified differently by the base-state difference itself. So the residual is a small
-**per-step numerical/structural difference**, largest where humidity is largest. The
-definitive tool to pin it down is the near-bitwise golden **column-step** fixture
-(instrument one Isca step, feed jsca the identical inputs, compare each stage) —
-tracked in issue #43.
+**per-step numerical/structural difference**, largest where humidity is largest.
+
+**Localising it (golden step fixture, started).** Instrumenting the running Isca
+column and dumping the `qe_moist_convection` I/O at a real step (step 600) settles
+one suspect: **convection is exact.** Fed Isca's true instantaneous column state,
+jsca's convection reproduces Isca's rain to **+0.00%**, the same `klzb`/`convflag`,
+and the T/q tendencies to the `sat_vapor_pres` es floor (~2e-7) —
+`tests/test_column_convection_step_fixtures.py`, recipe
+`fortran_instrumentation/column_convection_step_recipe.md`. So the few-percent
+daily-mean precip difference is **not** a convection-scheme error (a mean-state
+convection call over-rains by ~6% only because convection is nonlinear and the
+daily-mean profile is smoother than the instantaneous ones it acts on); it is a
+downstream consequence of the residual profile difference. The vertical structure of
+that residual — near-perfect above the convective top (~400 hPa), growing in the
+**boundary layer** (levels 25-30) — points the remaining search at the boundary-layer
+diffusion / `vert_diff` chain. Dumping those stages the same way is the next step
+(issue #43).
 
 ### CI regression gate
 
