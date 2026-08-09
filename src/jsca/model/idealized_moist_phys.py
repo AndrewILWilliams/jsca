@@ -83,6 +83,7 @@ class FriersonPhysicsParams:
     roughness_moist: float = 3.21e-5
     gust_const: float = 0.0        # constant_gust (Frierson: 0.0)
     albedo: float = 0.31
+    do_evap: bool = True           # lscale_cond re-evaporation (Frierson True; column_test False)
 
 
 class MoistPhysicsOutput(NamedTuple):
@@ -156,7 +157,8 @@ def idealized_moist_phys(
     precip = rain_c / delta_t
 
     # --- 2. large-scale condensation on the post-convection profile --- F90 L981
-    rain_l, dtemp_l, dq_l = lscale_cond(tg_tmp, qg_tmp, p_full_prev, p_half_prev)
+    rain_l, dtemp_l, dq_l = lscale_cond(
+        tg_tmp, qg_tmp, p_full_prev, p_half_prev, do_evap=params.do_evap)
     dt_tg = dt_tg + dtemp_l / delta_t
     dt_qg = dt_qg + dq_l / delta_t
     precip = precip + rain_l / delta_t
