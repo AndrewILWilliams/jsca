@@ -39,7 +39,7 @@ def fx():
 
 
 def _run(fx):
-    rain, dT, dq, cflag = qe_moist_convection(
+    rain, dT, dq, cflag, _klcl = qe_moist_convection(
         fx["qe_tin"], fx["qe_qin"], fx["qe_pfull"], fx["qe_phalf"], DT
     )
     return (np.asarray(rain), np.asarray(dT), np.asarray(dq), np.asarray(cflag))

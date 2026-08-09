@@ -97,12 +97,18 @@ def _pbl_depth(dp: DiffusivityParams, svcp, u, v, z, u_star, b_star):
 
 
 def diffusivity(dp: DiffusivityParams, t, q, u, v, z_full, z_half,
-                u_star, b_star, mo_params: MOParams = MOParams()):
+                u_star, b_star, mo_params: MOParams = MOParams(), ind_lcl=None):
     """Simple K-profile diffusivity. Returns ``(k_m, k_t, h)``.
 
     ``t``/``u``/``v``/``z_full`` are ``(..., K)``; ``z_half`` is ``(..., K+1)``;
     ``u_star``/``b_star`` are ``(...)``. ``q`` is accepted for signature
     compatibility but unused on the do_simple path.
+
+    ``ind_lcl`` (``do_lcl_diffusivity_depth=.true.``, the ``column_test`` /
+    single-column setting): when given, the boundary-layer depth ``h`` is the
+    height of the **convective LCL level** (``h = z_full_ag[ind_lcl]``, F90
+    ``diffusivity`` L317-324) instead of the bulk-Richardson ``pbl_depth``. Pass
+    the 0-based LCL index from :func:`jsca.physics.qe_moist_convection` per column.
     """
     gcp = constants.GRAV / constants.CP_AIR
     z_surf = z_half[..., -1:]                    # surface half level
@@ -110,7 +116,11 @@ def diffusivity(dp: DiffusivityParams, t, q, u, v, z_full, z_half,
     z_half_ag = z_half - z_surf
 
     svcp = t + gcp * z_full_ag                   # dry static energy / cp (do_simple)
-    h = _pbl_depth(dp, svcp, u, v, z_full_ag, u_star, b_star)
+    if ind_lcl is None:
+        h = _pbl_depth(dp, svcp, u, v, z_full_ag, u_star, b_star)
+    else:
+        # PBL top = LCL height: gather z_full_ag at the LCL level per column
+        h = jnp.take_along_axis(z_full_ag, ind_lcl[..., None], axis=-1)[..., 0]
 
     # --- K profile (diffusivity_pbl) ---
     h_inner = dp.frac_inner * h                  # (...,)

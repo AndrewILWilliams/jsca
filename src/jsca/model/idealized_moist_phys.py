@@ -85,6 +85,7 @@ class FriersonPhysicsParams:
     albedo: float = 0.31
     do_evap: bool = True           # lscale_cond re-evaporation (Frierson True; column_test False)
     use_virtual_temp: bool = False  # surface_flux virtual-T stability (Frierson False; column True)
+    do_lcl_diffusivity_depth: bool = False  # PBL depth = convective LCL height (column True)
 
 
 class MoistPhysicsOutput(NamedTuple):
@@ -149,7 +150,7 @@ def idealized_moist_phys(
     dt_qg = jnp.zeros(shape)
 
     # --- 1. convection (previous level; returns increments) --- F90 L862-877
-    rain_c, dtemp_c, dq_c, _cflag = qe_moist_convection(
+    rain_c, dtemp_c, dq_c, _cflag, klcl_c = qe_moist_convection(
         t_prev, q_prev, p_full_prev, p_half_prev, delta_t)
     tg_tmp = t_prev + dtemp_c
     qg_tmp = q_prev + dq_c
@@ -198,9 +199,13 @@ def idealized_moist_phys(
     dt_tg = dt_tg + tdt_s
 
     # --- 7. boundary-layer diffusivity (K profiles) --- F90 L1242
+    # do_lcl_diffusivity_depth (column_test): the PBL depth is the convective LCL
+    # height rather than the bulk-Richardson pbl_depth; pass the convection's LCL
+    # level index (F90 vert_turb_driver -> diffusivity with ind_lcl = klcls).
+    ind_lcl = klcl_c if params.do_lcl_diffusivity_depth else None
     diff_m, diff_t, pbl_h = diffusivity(
         params.diff, t_prev, q_prev, u_prev, v_prev, z_full_cur, z_half_cur,
-        sf.u_star, sf.b_star, params.mo)
+        sf.u_star, sf.b_star, params.mo, ind_lcl=ind_lcl)
 
     # --- 8. implicit vertical diffusion, down (momentum + TriSurf) --- F90 L1292
     dt_ug, dt_vg, _diss, tri = vert_diff_down(

@@ -40,7 +40,7 @@ def result():
     qin = fx["qe_qin"].astype(np.float64)[None, :]
     pf = fx["qe_pfull"].astype(np.float64)[None, :]
     ph = fx["qe_phalf"].astype(np.float64)[None, :]
-    rain, dT, dq, cflag = qe_moist_convection(tin, qin, pf, ph, dt)
+    rain, dT, dq, cflag, _klcl = qe_moist_convection(tin, qin, pf, ph, dt)
     return fx, {"rain": np.asarray(rain).ravel(), "dT": np.asarray(dT).ravel(),
                 "dq": np.asarray(dq).ravel(), "cflag": np.asarray(cflag).ravel()}
 

@@ -11,13 +11,13 @@ Reference: ``baseline/reference/column_scm_isca_sweep.npz``, distilled by
 ``scripts/distill_column_sweep.py`` from real Isca runs
 (``scripts/run_isca_column_sweep.py``). CI stays Isca-free (numpy golden data).
 
-After the `t_surf = init_temp + 1 K` init fix, SST agrees to <= 0.09 K at every
-latitude and the T/q profiles to <= 0.03 K outside the tropics. The moist tropics
-(0-15 deg) keep a larger profile residual (T ~0.37 K, q ~0.45 g/kg). This is a
-per-step numerical/structural difference (not a config toggle -- the canonical
-config incl. ``use_virtual_temp=True`` is now fully matched), largest where humidity
-is largest; pinning it down needs the golden step fixture (issue #43). Tolerances
-cover that tropical worst case; the SST bounds are tight everywhere.
+With the full canonical config matched (t_surf init, use_virtual_temp, do_evap, and
+do_lcl_diffusivity_depth), agreement is tight at **every** latitude, tropics included:
+SST <= 0.018 K, T-profile <= 0.027 K, q <= 0.026 g/kg, precip <= 0.007 mm/day. The
+last and largest fix was `do_lcl_diffusivity_depth` (boundary-layer depth = the
+convective LCL height, not the bulk-Richardson PBL) -- the golden step fixture
+localised the residual to the PBL depth (`pbl_height` off by 6.5 m), and porting it
+tightened the tropical profiles ~15x and tropical precip ~100x.
 """
 from pathlib import Path
 
@@ -77,17 +77,16 @@ def test_column_matches_isca_at_latitude(ref, lat):
     n_days = int(ref["n_days"])
     j = _run_jsca(ref["pk"], ref["bk"], ref["lat_deg"][i], n_days)
 
-    # SST is tight at every latitude after the t_surf = init_temp + 1 K fix
-    # (measured <= 0.045 K). The day-40 T/q *profiles* stay tight outside the
-    # tropics (<= 0.03 K at 45-60 deg) but the moist tropics (0 -15 deg) carry a
-    # larger residual (T ~0.37 K, q ~0.45 g/kg) from the unported surface_flux
-    # use_virtual_temp path -- a d608*q effect, largest where q is largest
-    # (tracked in #43). Tolerances cover that worst case.
-    assert _rmsd(j["t_surf"], ref["t_surf"][i]) < 0.15                     # K, trajectory
-    assert abs(j["t_surf"][-1] - ref["t_surf"][i][-1]) < 0.2             # K, final SST
-    assert _rmsd(j["T_prof"], ref["temp"][i][-1]) < 0.5                    # K, profile
-    assert _rmsd(j["q_prof"] * 1e3, ref["sphum"][i][-1] * 1e3) < 0.6      # g/kg, profile
-    assert abs((j["precip"][-1] - ref["precip"][i][-1]) * 86400.0) < 0.5  # mm/day
+    # With the full canonical config matched (t_surf init, use_virtual_temp, do_evap,
+    # do_lcl_diffusivity_depth), agreement is tight at *every* latitude, tropics
+    # included: measured SST <= 0.018 K, T-profile <= 0.027 K, q <= 0.026 g/kg,
+    # precip <= 0.007 mm/day. do_lcl_diffusivity_depth (PBL depth = convective LCL
+    # height) was the boundary-layer / tropical residual, tightening the tropics ~15x.
+    assert _rmsd(j["t_surf"], ref["t_surf"][i]) < 0.05                     # K, trajectory
+    assert abs(j["t_surf"][-1] - ref["t_surf"][i][-1]) < 0.05            # K, final SST
+    assert _rmsd(j["T_prof"], ref["temp"][i][-1]) < 0.1                    # K, profile
+    assert _rmsd(j["q_prof"] * 1e3, ref["sphum"][i][-1] * 1e3) < 0.1      # g/kg, profile
+    assert abs((j["precip"][-1] - ref["precip"][i][-1]) * 86400.0) < 0.05  # mm/day
 
 
 def test_sweep_reproduces_isca_meridional_gradient(ref):
