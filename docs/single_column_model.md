@@ -107,54 +107,55 @@ Against the canonical `column_test.py` reference:
 
 | diagnostic | agreement |
 |---|---|
-| day-40 SST | jsca vs Isca (Δ 0.03 K) |
-| day-40 precip | Δ ~0.13 mm/day (~4%) |
-| day-40 T profile | RMSD 0.21 K |
-| day-40 q profile | RMSD 0.20 g/kg |
-| SST trajectory (40 d) | RMSD 0.02 K |
+| day-40 SST | jsca 288.014 vs Isca 288.021 K (Δ 0.007 K) |
+| day-40 precip | jsca 3.137 vs Isca 3.142 mm/day (Δ 0.005) |
+| day-40 T profile | RMSD 0.13 K |
+| day-40 q profile | RMSD 0.11 g/kg |
+| SST trajectory (40 d) | RMSD 0.012 K |
 
-The SST trajectory tracks Isca to hundredths of a kelvin. Getting there meant
+The SST trajectory tracks Isca to hundredths of a kelvin. The biggest single fix was
 reproducing **Isca's deliberately unstable slab initialisation** — `t_surf =
 init_temp + 1 K` (`idealized_moist_phys.F90` L643, "to allow moisture to quickly
-enter the atmosphere avoiding problems with the convection scheme"). This +1 K, not
-the mechanisms first guessed (`constant_gust`, `do_lcl_diffusivity_depth`, both since
-shown to be negligible here), was the dominant difference: without it the SST
-trajectory is offset ~1 K early, decaying to ~0.3 K by day 40; with it the SST RMSD
-drops from **0.55 K to 0.02 K**. (Diagnosis: Isca's per-step `delta_t_surf` matched
-jsca's to 1e-4 from step 1 — only the *initial* SST differed.) A second, minor config
-match: `lscale_cond do_evap=False` (column_test disables rain re-evaporation), now
-threaded through `idealized_moist_phys`.
+enter the atmosphere avoiding problems with the convection scheme"): without it the
+SST trajectory is offset ~1 K early, decaying to ~0.3 K by day 40; with it the SST
+RMSD drops from **0.55 K to 0.02 K** (diagnosis: Isca's per-step `delta_t_surf`
+matched jsca's to 1e-4 from step 1 — only the *initial* SST differed). Note
+`constant_gust` really is negligible here (Frierson sets it 0); `do_lcl_diffusivity_depth`
+was *not* — an early on/off test made it look so, but the golden step fixture later
+showed it was the dominant **profile** residual (below).
 
-jsca now runs the **full canonical column config**: `surface_flux
-use_virtual_temp=True` (the `d608*q` virtual-temperature correction to the surface-layer
-stability) and `lscale_cond do_evap=False` are both ported/threaded. The
-`use_virtual_temp` path is golden-fixture-validated against Isca to 1e-6
-(`tests/test_surface_flux_fixtures.py`, from `dump_surface_flux_vt_reference.F90`), and
-its effect on the fluxes matches Isca's to 1e-4.
+jsca now runs the **full canonical column config**, and the golden step fixture drove
+the last differences to ground. In order of size:
 
-A residual day-40 **profile** difference remains: RMSD ~0.21 K / 0.20 g/kg at the
-global-average column, ~0.37 K / ~0.45 g/kg in the moist tropics, ~0.03 K at high
-latitudes. Interestingly this is **not** a config toggle — with every namelist option
-now matched, turning `use_virtual_temp` on changed the column T profile by only
-~0.04 K RMSD (vs ~0.12 K in Isca's own on/off test), because the perturbation is
-amplified differently by the base-state difference itself. So the residual is a small
-**per-step numerical/structural difference**, largest where humidity is largest.
+1. **`t_surf = init_temp + 1 K`** (above) — SST 0.55 K → 0.02 K.
+2. **`do_lcl_diffusivity_depth=True`** — the boundary-layer depth is the **convective
+   LCL height**, not the bulk-Richardson PBL. This was the dominant remaining residual.
+3. **`surface_flux use_virtual_temp=True`** (`d608*q` virtual-T stability) and
+   **`lscale_cond do_evap=False`** — golden-fixture-validated (`use_virtual_temp` to
+   1e-6, `tests/test_surface_flux_fixtures.py`); smaller contributors.
 
-**Localising it (golden step fixture, started).** Instrumenting the running Isca
-column and dumping the `qe_moist_convection` I/O at a real step (step 600) settles
-one suspect: **convection is exact.** Fed Isca's true instantaneous column state,
-jsca's convection reproduces Isca's rain to **+0.00%**, the same `klzb`/`convflag`,
-and the T/q tendencies to the `sat_vapor_pres` es floor (~2e-7) —
-`tests/test_column_convection_step_fixtures.py`, recipe
-`fortran_instrumentation/column_convection_step_recipe.md`. So the few-percent
-daily-mean precip difference is **not** a convection-scheme error (a mean-state
-convection call over-rains by ~6% only because convection is nonlinear and the
-daily-mean profile is smoother than the instantaneous ones it acts on); it is a
-downstream consequence of the residual profile difference. The vertical structure of
-that residual — near-perfect above the convective top (~400 hPa), growing in the
-**boundary layer** (levels 25-30) — points the remaining search at the boundary-layer
-diffusion / `vert_diff` chain. Dumping those stages the same way is the next step
-(issue #43).
+**How the golden step fixture localised it.** Instrumenting the running Isca column
+(dump each stage's I/O at a real step, feed jsca the identical inputs) ruled suspects
+in and out cleanly:
+
+* **Convection is exact** — fed Isca's true instantaneous column, jsca's
+  `qe_moist_convection` reproduces the rain to **+0.00%**, the same `klzb`/`convflag`,
+  and the tendencies to the `sat_vapor_pres` es floor
+  (`tests/test_column_convection_step_fixtures.py`). The ~6% a mean-state convection
+  call over-rains is a nonlinearity artefact of the daily-mean profile, not a bug.
+* **The full physics step** matched Isca everywhere **except the boundary-layer top
+  (levels 26-28)**, and — the smoking gun — **`pbl_height` differed by 6.5 m.** jsca's
+  Richardson PBL vs Isca's LCL PBL: jsca's LCL height (948.030 m) equals Isca's
+  `z_pbl` (948.030 m) to 4 decimals, confirming `do_lcl_diffusivity_depth` as the
+  cause. Porting it (`qe_moist_convection` now returns the LCL index;
+  `diffusivity(ind_lcl=...)` sets `h` to the LCL height) made `pbl_height` match
+  exactly.
+
+**Result.** Against the canonical reference, day-40 agreement is now SST RMSD
+**0.012 K**, T-profile **0.13 K**, q **0.11 g/kg**, precip **0.005 mm/day**; across the
+latitude sweep every column agrees to SST ≤ 0.018 K, T ≤ 0.027 K, q ≤ 0.026 g/kg,
+precip ≤ 0.007 mm/day — the moist tropics tightened ~15× in the profiles and ~100× in
+precip.
 
 ### CI regression gate
 

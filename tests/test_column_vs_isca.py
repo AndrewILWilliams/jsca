@@ -13,15 +13,15 @@ never needs Isca itself: it validates against the committed golden trajectory
 (the same posture as the frierson climatology references). To regenerate the
 reference, rebuild Isca and re-run those two scripts.
 
-The **dominant** difference was Isca's deliberately-unstable slab init
-(``t_surf = init_temp + 1 K``, ``idealized_moist_phys.F90`` L643); reproducing it
-dropped the SST RMSD from 0.55 K to **0.02 K** (now asserted < 0.1 K). jsca also now
-runs the full canonical column config (``surface_flux use_virtual_temp=True``,
-``lscale_cond do_evap=False``, both ported/threaded). A residual **profile** difference
-remains (T-profile RMSD ~0.21 K, q ~0.20 g/kg, larger in the moist tropics) that is
-**not** a config toggle -- it is present at every config and is a small per-step
-numerical/structural difference. Pinning it down needs the near-bitwise golden
-column-step fixture (tracked in issue #43); it sets the profile tolerances here.
+jsca now runs the **full canonical column config**, closing the jsca-vs-Isca gaps in
+order of size: Isca's deliberately-unstable slab init (``t_surf = init_temp + 1 K``,
+``idealized_moist_phys.F90`` L643; SST 0.55 K -> 0.02 K), then
+``do_lcl_diffusivity_depth`` (boundary-layer depth = convective LCL height, not the
+bulk-Richardson PBL) which the golden step fixture localised as the boundary-layer /
+tropical residual (``pbl_height`` off by 6.5 m; tightened the tropics ~15x and precip
+~100x), plus ``surface_flux use_virtual_temp=True`` and ``lscale_cond do_evap=False``.
+Measured agreement now: SST RMSD 0.012 K, T-profile 0.13 K, q 0.11 g/kg, precip
+0.005 mm/day -- the tolerances below sit above these.
 """
 from pathlib import Path
 
@@ -91,21 +91,22 @@ def test_reference_is_isca_31_even_sigma(isca):
 
 
 def test_temperature_profile_matches_isca(isca, jsca_run):
-    # measured 0.21 K vs the canonical (use_virtual_temp=True) reference; the gap is
-    # the unported use_virtual_temp path (#43). SST is separately tight (below).
-    assert _rmsd(jsca_run["T_prof"], isca["temp"][-1]) < 0.3      # K
+    # measured 0.13 K vs the canonical reference (all namelist options now matched:
+    # t_surf init, use_virtual_temp, do_evap, do_lcl_diffusivity_depth).
+    assert _rmsd(jsca_run["T_prof"], isca["temp"][-1]) < 0.2      # K
 
 
 def test_humidity_profile_matches_isca(isca, jsca_run):
-    assert _rmsd(jsca_run["q_prof"] * 1e3, isca["sphum"][-1] * 1e3) < 0.3   # g/kg (measured 0.20)
+    assert _rmsd(jsca_run["q_prof"] * 1e3, isca["sphum"][-1] * 1e3) < 0.2   # g/kg (measured 0.11)
 
 
 def test_sst_trajectory_matches_isca(isca, jsca_run):
-    # SST agreement after the t_surf = init_temp + 1 K fix (measured 0.03 K)
-    assert _rmsd(jsca_run["t_surf"], isca["t_surf"]) < 0.1       # K over 40 days
-    assert abs(jsca_run["t_surf"][-1] - isca["t_surf"][-1]) < 0.1  # final SST
+    # SST agreement (measured 0.012 K) after the t_surf and do_lcl_diffusivity_depth fixes
+    assert _rmsd(jsca_run["t_surf"], isca["t_surf"]) < 0.05      # K over 40 days
+    assert abs(jsca_run["t_surf"][-1] - isca["t_surf"][-1]) < 0.05  # final SST
 
 
 def test_precip_matches_isca(isca, jsca_run):
-    # final-day precip within 0.2 mm/day (kg/m^2/s -> mm/day = *86400); measured 0.08
-    assert abs((jsca_run["precip"][-1] - isca["precip"][-1]) * 86400.0) < 0.2
+    # final-day precip within 0.05 mm/day (measured 0.005); do_lcl_diffusivity_depth
+    # closed the boundary-layer PBL-depth gap that drove the precip difference.
+    assert abs((jsca_run["precip"][-1] - isca["precip"][-1]) * 86400.0) < 0.05

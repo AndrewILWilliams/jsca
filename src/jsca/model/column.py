@@ -150,6 +150,7 @@ def build_column(
     albedo: float = 0.30,                   # column_test mixed_layer_nml albedo_value
     do_evap: bool = False,                  # column_test lscale_cond_nml do_evap
     use_virtual_temp: bool = True,          # column_test surface_flux_nml use_virtual_temp
+    do_lcl_diffusivity_depth: bool = True,  # column_test idealized_moist_phys_nml
     vert_difference_option: str = "simmons_and_burridge",
     **phys_kwargs,
 ) -> ColumnModel:
@@ -206,6 +207,7 @@ def build_column(
         albedo=albedo,
         do_evap=do_evap,
         use_virtual_temp=use_virtual_temp,
+        do_lcl_diffusivity_depth=do_lcl_diffusivity_depth,
         **phys_kwargs,
     )
 

@@ -19,9 +19,9 @@ ROOT = Path(__file__).resolve().parent.parent
 fx = np.load(ROOT / "tests" / "fixtures" / "qe_moist_convection_reference.npz")
 
 DT = 720.0
-rain_j, dT_j, dq_j, cf_j = (np.asarray(a) for a in
-                            qe_moist_convection(fx["qe_tin"], fx["qe_qin"],
-                                                fx["qe_pfull"], fx["qe_phalf"], DT))
+rain_j, dT_j, dq_j, cf_j, _klcl_j = (np.asarray(a) for a in
+                                     qe_moist_convection(fx["qe_tin"], fx["qe_qin"],
+                                                         fx["qe_pfull"], fx["qe_phalf"], DT))
 # increments -> rates (K/day, g/kg/day) for readability
 dT_fr = fx["qe_deltaT"] / DT * 86400.0
 dq_fr = fx["qe_deltaq"] / DT * 86400.0 * 1e3

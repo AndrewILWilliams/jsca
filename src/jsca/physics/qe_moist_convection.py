@@ -505,11 +505,11 @@ def qe_moist_convection(Tin: Array, qin: Array, p_full: Array, p_half: Array,
     ph2 = p_half.reshape(-1, K + 1)
 
     def one(pf, ph, t, q, r):
-        cape, _cin, klzb, _klcl, Tp, rp = _cape_column(pf, ph, t, r)
+        cape, _cin, klzb, klcl, Tp, rp = _cape_column(pf, ph, t, r)
         dT, dq, rain, cflag, _Tref, _qref = _adjust_column(
             pf, ph, t, q, Tp, rp, klzb, cape, dt)
-        return rain, dT, dq, cflag
+        return rain, dT, dq, cflag, klcl
 
-    rain, dT, dq, cflag = jax.vmap(one)(pf2, ph2, tin2, qin2, rin2)
+    rain, dT, dq, cflag, klcl = jax.vmap(one)(pf2, ph2, tin2, qin2, rin2)
     return (rain.reshape(flat), dT.reshape(flat + (K,)),
-            dq.reshape(flat + (K,)), cflag.reshape(flat))
+            dq.reshape(flat + (K,)), cflag.reshape(flat), klcl.reshape(flat))
