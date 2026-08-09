@@ -167,8 +167,11 @@ def idealized_moist_phys(
 
     # --- 3. grey radiation, down (surface SW/LW down; needs t_prev) --- F90 L1054
     albedo = jnp.broadcast_to(jnp.asarray(params.albedo), lat2d.shape)
+    # q_prev is passed for rad_scheme="byrne" (humidity-dependent LW); the
+    # default Frierson scheme ignores it. Uses the previous time level, matching
+    # the temperature argument (F90 calls radiation on the same tracer level).
     net_surf_sw_down, surf_lw_down, rad_state = gray_rad_down(
-        params.gray_rad, lat2d, p_half_cur, t_prev, albedo)
+        params.gray_rad, lat2d, p_half_cur, t_prev, albedo, q_prev)
 
     # --- 4. surface fluxes (previous lowest level + t_surf) --- F90 L1077
     z_atm = z_full_cur[..., -1]              # height of the lowest level (z_surf = 0)

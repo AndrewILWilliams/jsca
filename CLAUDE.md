@@ -91,36 +91,54 @@ Isca version.
 
 Done and fixture-validated: `jsca.grid` (Gaussian grid, GFDL-normalized
 associated Legendre, spectral transforms, Laplacian/hyperdiffusion),
-`jsca.dycore` (leapfrog/RAW incl. two-level split, matrix_invert,
-press_and_geopot), `jsca.testing` (Tier-3 equivalence stats), constants.
+`jsca.dycore` — the **full GFDL spectral dynamical core** (leapfrog/RAW incl.
+two-level split, matrix_invert, press_and_geopot, `spectral_damping`,
+`implicit`, spherical operators, `fv_advection`, `water_borrowing`,
+`global_integral`, and the `spectral_dynamics` assembly), `jsca.testing`
+(Tier-3 equivalence stats), constants.
 
-Assembled (smoke/invariant-tested; golden step fixtures pending a full Isca
-build): `jsca.model.idealized_moist_phys` (Frierson column physics stack),
-`jsca.model.frierson` (moist aquaplanet stepping), and `jsca.model.column` —
-the **single-column model (SCM)**, Isca's `src/atmos_column` driver: the full
-column physics stepped with the dynamical core bypassed (fixed winds/ps, grid
-leapfrog of T and q, optional `q_decrease_only` clamp). It is the Tier-2
-physics-chain test harness (scoping §4.4); see `docs/single_column_model.md`.
+Physics modules ported: `qe_moist_convection` (simple Betts–Miller),
+`lscale_cond`, `two_stream_gray_rad` (grey radiation — `rad_scheme='frierson'`
+and `'byrne'` [Byrne & O'Gorman 2013]), `monin_obukhov`/`surface_flux`,
+`diffusivity`, `vert_diff`, `mixed_layer`, `damping_driver`, `hs_forcing`.
 
-## Next queue (in order; one item per session is a good size)
+Models: `jsca.model.held_suarez` (dry HS), `jsca.model.idealized_moist_phys`
+(Frierson column physics stack), `jsca.model.frierson` (moist aquaplanet
+stepping — the **full 3D run is validated against Isca**; see
+`docs/frierson_climatology.md`), and `jsca.model.column` — the **single-column
+model (SCM)**, Isca's `src/atmos_column` driver: the full column physics stepped
+with the dynamical core bypassed (fixed winds/ps, grid leapfrog of T and q,
+optional `q_decrease_only` clamp), validated against Isca column runs to
+essentially machine-adjacent tolerances (`docs/single_column_model.md`). It is
+the Tier-2 physics-chain harness (scoping §4.4) and the fast validation bench
+for new physics options.
 
-1. **`spectral_damping.F90`** — deps: fms + `transforms_mod`
-   (`get_eigen_laplacian`, `get_spec_domain`). For the fixture driver, stub
-   `transforms_mod`: `get_spec_domain` returns the full serial domain;
-   `get_eigen_laplacian` must reproduce Isca's eigenvalues — read how
-   `$ISCA_SRC/src/atmos_spectral/tools/transforms.F90` /
-   `spherical_fourier.F90` build them (sign and radius conventions!) and have
-   the stub carry values computed by that same formula; cross-check against
-   `jsca.grid.spectral.laplacian_eigenvalues` in the test.
-2. **`implicit.F90`** — the semi-implicit heart. Read fully first; its
-   dependencies (press_and_geopot, matrix_invert) are already ported.
-3. **Spherical operators** (`spherical.F90`: u,v ↔ vor,div, gradients,
-   ∂/∂μ using the l = M+1 derivative row) — prerequisite for
-   spectral_dynamics; extends `jsca/grid/transforms.py`.
-4. **`fv_advection.F90`**, `water_borrowing.F90`, `global_integral.F90`.
-5. **`spectral_dynamics.F90` assembly** + Held–Suarez run and the
-   climatology + ≥0.5×-Fortran performance gate (Fortran numbers:
-   `baseline/reference/timings_sandbox.json`; node numbers pending).
+## Next queue (physics breadth; one item per session is a good size)
+
+The dynamical core and the Frierson/Held–Suarez/SCM stacks are complete. The
+focus is now **swappable physics options**, each validatable in the SCM (fast)
+before it runs in the full 3D model. In rough order of value-per-effort:
+
+1. **Radiation schemes** in `two_stream_gray_rad.F90` (extends the already-ported
+   grey radiation). `'byrne'` is done; next: **`'geen'`** (Geen 2015 — two-band
+   window + non-window LW, humidity + CO2 dependent; needs the `lw_*_win`
+   arrays and `window` fraction) and optionally **`'schneider'`** (Schneider &
+   Liu 2009 giant-planet two-stream with scattering — niche). Then
+   **`do_seasonal`** insolation (perpetual-equinox → seasonal cycle; needs the
+   `astronomy_mod` `diurnal_solar` port).
+2. **Convection schemes** (`convection_scheme` in `idealized_moist_phys.F90`):
+   `NO_CONV` (trivial), `dry_convection` (small), then `FULL_BETTS_MILLER`
+   (`betts_miller.F90`, distinct from the simple qe scheme already ported), and
+   `RAS` (relaxed Arakawa–Schubert, larger).
+3. **Surface/boundary options**: roughness lengths (heat/moist/mom), land masks
+   (`mixed_layer_bc`), `qflux` ocean heat transport, `do_virtual` in vert_diff.
+4. **Big external ports** (out of scope for now): RRTM/Socrates band radiation,
+   cloud schemes (SimCloud/SPOOKIE), gravity-wave drag.
+
+Every option ships opt-in (default = the current Frierson/HS behavior, so the
+validated runs stay byte-for-byte unchanged) with Tier-1 Fortran fixtures and an
+SCM validation, following the `do_lcl_diffusivity_depth` / `rad_scheme='byrne'`
+pattern.
 
 ## Climatology validation resolution
 
