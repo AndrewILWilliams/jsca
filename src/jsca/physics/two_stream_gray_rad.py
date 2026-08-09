@@ -1,11 +1,21 @@
-"""Frierson grey (two-stream) radiation — Isca's ``rad_scheme = 'frierson'``.
+"""Grey (two-stream) radiation — Isca's ``two_stream_gray_rad``.
 
-Faithful port of the Frierson branches of
-``src/atmos_param/two_stream_gray_rad/two_stream_gray_rad.F90`` — the grey
-radiation scheme the Frierson (2006) moist aquaplanet uses
-(``two_stream_gray_rad_nml: rad_scheme='frierson', do_seasonal=.false.,
-atm_abs=0.2``). The atmosphere is a grey (wavelength-independent) absorber with a
-prescribed optical-depth profile; there is no wavelength dependence and no cloud.
+Faithful port of ``src/atmos_param/two_stream_gray_rad/two_stream_gray_rad.F90``.
+The atmosphere is a grey (wavelength-independent) absorber with a prescribed
+optical-depth profile; there is no wavelength dependence and no cloud. Two
+longwave parameterisations are ported, selected by ``GrayRadParams.rad_scheme``
+(F90 ``rad_scheme`` namelist, L214-229):
+
+* ``"frierson"`` (default) — Frierson (2006), the moist aquaplanet scheme
+  (``do_seasonal=.false., atm_abs=0.2``): LW optical depth is a prescribed
+  function of latitude and pressure only.
+* ``"byrne"`` — Byrne & O'Gorman (2013): LW optical depth grows with specific
+  humidity and CO2. The shortwave is the *same* as Frierson (F90 shares the
+  ``B_FRIERSON, B_BYRNE`` SW branch); only the LW layer transmissivity differs.
+
+The Geen (2015, two-band window) and Schneider & Liu (2009, giant-planet
+scattering) schemes are not yet ported. The description below is for the Frierson
+scheme; the Byrne longwave is documented at its branch in :func:`gray_rad_down`.
 
 **Shortwave (``two_stream_gray_rad_down``, F90 L452-492):** a fixed
 top-of-atmosphere insolation with the Frierson p2 profile (no diurnal/seasonal
@@ -61,16 +71,34 @@ Array = jnp.ndarray
 
 #: Standard reference pressure ``pstd_mks`` (Pa) — Isca ``constants.F90`` L263.
 PSTD_MKS = 101325.0
+#: Earth surface pressure ``pstd_mks_earth`` (Pa) — Isca ``constants.F90`` L252.
+#: The Byrne/Geen absorption coefficients are non-dimensionalised by this Earth
+#: value (not ``pstd_mks``), so their optical depths always divide by it
+#: (F90 ``two_stream_gray_rad_init`` L240-242 warns if the two differ). For Earth
+#: runs ``pstd_mks == pstd_mks_earth``.
+PSTD_MKS_EARTH = 101325.0
 
 
 @dataclass(frozen=True)
 class GrayRadParams:
-    """Static Frierson grey-radiation configuration (hashable; static jit arg).
+    """Static grey-radiation configuration (hashable; static jit arg).
 
     Defaults are the Isca ``two_stream_gray_rad_nml`` defaults, with the Frierson
     aquaplanet override ``atm_abs = 0.2`` (the namelist default is 0.0).
+
+    ``rad_scheme`` selects the longwave parameterisation (F90 L214-229):
+
+    * ``"frierson"`` (default) — Frierson (2006): LW optical depth a prescribed
+      function of latitude and pressure (no humidity dependence).
+    * ``"byrne"`` — Byrne & O'Gorman (2013): LW optical depth grows with specific
+      humidity and CO2, ``dtau = (bog_a*bog_mu + 0.17*ln(CO2/360) + bog_b*q) *
+      dp/pstd_earth`` (F90 L563). The shortwave is identical to Frierson (the two
+      share the ``B_FRIERSON, B_BYRNE`` SW branch, F90 L479-492), and the down/up
+      LW integration is the same two-stream recurrence — only ``lw_dtrans``
+      changes. Requires ``q`` to be passed to :func:`gray_rad_down`.
     """
 
+    rad_scheme: str = "frierson"
     solar_constant: float = 1360.0
     del_sol: float = 1.4
     del_sw: float = 0.0
@@ -83,6 +111,11 @@ class GrayRadParams:
     wv_exponent: float = 4.0
     solar_exponent: float = 4.0
     diabatic_acce: float = 1.0
+    # --- Byrne & O'Gorman (2013) longwave (rad_scheme="byrne"); F90 L117-119, L104 ---
+    bog_a: float = 0.8678
+    bog_b: float = 1997.9
+    bog_mu: float = 1.0
+    carbon_conc: float = 360.0   # CO2 concentration (ppmv); F90 L104
 
 
 @dataclass(frozen=True)
@@ -135,16 +168,17 @@ def _lw_up_integral(dtrans: Array, b: Array, b_surf: Array) -> Array:
 
 
 def gray_rad_down(params: GrayRadParams, lat: Array, p_half: Array, t: Array,
-                  albedo: Array):
+                  albedo: Array, q: Array | None = None):
     """Down pass: SW + downward LW → surface fluxes (F90 ``..._down``).
 
-    Returns ``(net_surf_sw_down, surf_lw_down, state)`` — the surface downward
-    SW absorbed ``(1-albedo)*sw_down(sfc)`` and downward LW ``(...)`` [W/m^2],
-    and a :class:`RadDownState` for the up pass.
+    ``q`` (specific humidity ``(..., K)``) is required for ``rad_scheme="byrne"``
+    and ignored by ``"frierson"``. Returns ``(net_surf_sw_down, surf_lw_down,
+    state)`` — the surface downward SW absorbed ``(1-albedo)*sw_down(sfc)`` and
+    downward LW ``(...)`` [W/m^2], and a :class:`RadDownState` for the up pass.
     """
     ph = p_half / PSTD_MKS                                 # normalized pressure (..., K+1)
 
-    # --- shortwave ---
+    # --- shortwave (Frierson and Byrne share this branch, F90 L479-492) ---
     p2 = (1.0 - 3.0 * jnp.sin(lat) ** 2) / 4.0
     insol = 0.25 * params.solar_constant * (
         1.0 + params.del_sol * p2 + params.del_sw * jnp.sin(lat))
@@ -152,13 +186,29 @@ def gray_rad_down(params: GrayRadParams, lat: Array, p_half: Array, t: Array,
     sw_tau = sw_tau_0[..., None] * ph ** params.solar_exponent
     sw_down = insol[..., None] * jnp.exp(-sw_tau)          # (..., K+1)
 
-    # --- longwave source + optical depth ---
+    # --- longwave source + layer transmissivity (scheme-dependent) ---
     b = constants.STEFAN * t ** 4                          # (..., K)
-    lw_tau_0 = (params.ir_tau_eq
-                + (params.ir_tau_pole - params.ir_tau_eq) * jnp.sin(lat) ** 2) * params.odp
-    lw_tau = lw_tau_0[..., None] * (
-        params.linear_tau * ph + (1.0 - params.linear_tau) * ph ** params.wv_exponent)
-    lw_dtrans = jnp.exp(-(lw_tau[..., 1:] - lw_tau[..., :-1]))   # (..., K)
+    if params.rad_scheme == "frierson":
+        # LW optical depth: prescribed profile in latitude and pressure (F90 L574-588)
+        lw_tau_0 = (params.ir_tau_eq
+                    + (params.ir_tau_pole - params.ir_tau_eq) * jnp.sin(lat) ** 2) * params.odp
+        lw_tau = lw_tau_0[..., None] * (
+            params.linear_tau * ph + (1.0 - params.linear_tau) * ph ** params.wv_exponent)
+        lw_dtrans = jnp.exp(-(lw_tau[..., 1:] - lw_tau[..., :-1]))   # (..., K)
+    elif params.rad_scheme == "byrne":
+        # Byrne & O'Gorman (2013): dtau = (a*mu + 0.17*ln(CO2/360) + b*q)*dp/pstd_earth
+        # (F90 L562-566). Absorption coeffs are normalised by the Earth surface
+        # pressure, so this divides by PSTD_MKS_EARTH regardless of pstd_mks.
+        if q is None:
+            raise ValueError("rad_scheme='byrne' requires specific humidity q")
+        dp = p_half[..., 1:] - p_half[..., :-1]            # (..., K)
+        lw_del_tau = (params.bog_a * params.bog_mu
+                      + 0.17 * jnp.log(params.carbon_conc / 360.0)
+                      + params.bog_b * q) * (dp / PSTD_MKS_EARTH)
+        lw_dtrans = jnp.exp(-lw_del_tau)                   # (..., K)
+    else:
+        raise ValueError(f"unknown rad_scheme {params.rad_scheme!r} "
+                         "(supported: 'frierson', 'byrne')")
 
     lw_down = _lw_down_integral(lw_dtrans, b)
     surf_lw_down = lw_down[..., -1]
@@ -195,11 +245,13 @@ def gray_rad_up(params: GrayRadParams, p_half: Array, t_surf: Array, albedo: Arr
 
 
 def two_stream_gray_rad(params: GrayRadParams, lat: Array, p_half: Array,
-                        t: Array, t_surf: Array, albedo: Array):
+                        t: Array, t_surf: Array, albedo: Array,
+                        q: Array | None = None):
     """Full grey-radiation step (down then up), convenience wrapper.
 
-    Returns ``(tdt_rad, net_surf_sw_down, surf_lw_down, olr, net_lw_surf)``.
+    ``q`` (specific humidity) is required for ``rad_scheme="byrne"``. Returns
+    ``(tdt_rad, net_surf_sw_down, surf_lw_down, olr, net_lw_surf)``.
     """
-    net_sw, lw_dn, state = gray_rad_down(params, lat, p_half, t, albedo)
+    net_sw, lw_dn, state = gray_rad_down(params, lat, p_half, t, albedo, q)
     tdt_rad, olr, net_lw_surf = gray_rad_up(params, p_half, t_surf, albedo, state)
     return tdt_rad, net_sw, lw_dn, olr, net_lw_surf
