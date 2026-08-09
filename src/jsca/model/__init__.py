@@ -1,5 +1,7 @@
 """Top-level model drivers assembled from the dynamical core and physics."""
 
+from . import column
+from .column import ColumnModel, build_column
 from .held_suarez import (
     HeldSuarezModel,
     build_held_suarez,
@@ -22,4 +24,7 @@ __all__ = [
     "FriersonPhysicsParams",
     "MoistPhysicsOutput",
     "idealized_moist_phys",
+    "ColumnModel",
+    "build_column",
+    "column",
 ]
