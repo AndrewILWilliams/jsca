@@ -99,8 +99,9 @@ two-level split, matrix_invert, press_and_geopot, `spectral_damping`,
 
 Physics modules ported: `qe_moist_convection` (simple Betts–Miller),
 `lscale_cond`, `two_stream_gray_rad` (grey radiation — `rad_scheme='frierson'`
-and `'byrne'` [Byrne & O'Gorman 2013]), `monin_obukhov`/`surface_flux`,
-`diffusivity`, `vert_diff`, `mixed_layer`, `damping_driver`, `hs_forcing`.
+and `'byrne'` [Byrne & O'Gorman 2013]; `do_seasonal` seasonal+diurnal insolation),
+`astronomy` (`diurnal_solar`), `monin_obukhov`/`surface_flux`, `diffusivity`,
+`vert_diff`, `mixed_layer`, `damping_driver`, `hs_forcing`.
 
 Models: `jsca.model.held_suarez` (dry HS), `jsca.model.idealized_moist_phys`
 (Frierson column physics stack), `jsca.model.frierson` (moist aquaplanet
@@ -120,12 +121,12 @@ focus is now **swappable physics options**, each validatable in the SCM (fast)
 before it runs in the full 3D model. In rough order of value-per-effort:
 
 1. **Radiation schemes** in `two_stream_gray_rad.F90` (extends the already-ported
-   grey radiation). `'byrne'` is done; next: **`'geen'`** (Geen 2015 — two-band
-   window + non-window LW, humidity + CO2 dependent; needs the `lw_*_win`
-   arrays and `window` fraction) and optionally **`'schneider'`** (Schneider &
-   Liu 2009 giant-planet two-stream with scattering — niche). Then
-   **`do_seasonal`** insolation (perpetual-equinox → seasonal cycle; needs the
-   `astronomy_mod` `diurnal_solar` port).
+   grey radiation). `'byrne'` and `do_seasonal` (seasonal+diurnal insolation, via
+   the ported `astronomy` `diurnal_solar`; SCM-validated vs Isca in
+   `tests/test_column_seasonal_vs_isca.py`) are done. Next: **`'geen'`** (Geen
+   2015 — two-band window + non-window LW, humidity + CO2 dependent; needs the
+   `lw_*_win` arrays and `window` fraction) and optionally **`'schneider'`**
+   (Schneider & Liu 2009 giant-planet two-stream with scattering — niche).
 2. **Convection schemes** (`convection_scheme` in `idealized_moist_phys.F90`):
    `NO_CONV` (trivial), `dry_convection` (small), then `FULL_BETTS_MILLER`
    (`betts_miller.F90`, distinct from the simple qe scheme already ported), and

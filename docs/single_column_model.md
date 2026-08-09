@@ -188,6 +188,47 @@ python scripts/compare_column_scm.py <atmos_daily.nc>   # refresh the figure
 This keeps the "reproduce Isca if we want to" path live while CI itself stays
 Isca-free.
 
+## Physics options (validated in the SCM)
+
+The SCM is the fast validation bench for swappable physics. Each option is opt-in
+(default = the Frierson config, so the runs above are unchanged) and validated
+against Isca here before it runs in the full 3D model.
+
+* **`rad_scheme`** (grey radiation longwave): `"frierson"` (default) or `"byrne"`
+  (Byrne & O'Gorman 2013, humidity + CO2 dependent LW). Golden-fixture-validated to
+  machine precision (`tests/test_two_stream_gray_rad_byrne_fixtures.py`).
+
+* **`do_seasonal`** (seasonal + diurnal insolation): switches the shortwave from
+  the default perpetual-equinox annual-mean profile to the astronomically computed
+  cycle (`jsca.physics.astronomy.diurnal_solar` — orbital angle, declination,
+  Earth-Sun distance, half-day). `build_column(do_seasonal=True, solday=…,
+  equinox_day=…, year_in_s=…)` precomputes the orbital table and threads the model
+  clock through the step; `solday >= 0` freezes the season (perpetual day-of-year
+  with a diurnal cycle). The astronomy is fixture-validated to 1e-12
+  (`tests/test_astronomy_fixtures.py`).
+
+  **Validation against Isca** (`tests/test_column_seasonal_vs_isca.py`; reference
+  `scripts/run_isca_column_seasonal.py` with `do_seasonal=.true.`, `thirty_day`
+  calendar, `current_date=[1,1,1]`, lat 35.3 deg N, 90 days from NH winter). Over
+  the run the daily-mean TOA insolation climbs ~180 → ~358 W/m² and the slab SST
+  warms ~265 → ~284 K. jsca reproduces this:
+
+  | diagnostic | agreement |
+  |---|---|
+  | TOA insolation (interior days) | ~machine precision |
+  | TOA insolation (90-day RMSD) | 0.7 W/m² (2 run-boundary days only, averaging-window convention) |
+  | SST trajectory | RMSD 0.008 K (max 0.016 K) |
+  | precip trajectory | max Δ 0.042 mm/day |
+  | day-90 T / q profile | 0.07 K / 0.06 g/kg |
+
+  ![do_seasonal SCM vs Isca](figures/column_scm_seasonal_vs_isca.png)
+
+  The only non-trivial residual is a few W/m² on the two run-boundary days, purely
+  from how the daily-mean output window lands on the timesteps at the very start and
+  end of the run (Isca's final daily mean includes the last end-of-run step that
+  jsca's per-day window omits) — a diagnostic convention, not a physics difference;
+  the interior 88 days match to machine precision.
+
 ## Usage
 
 ```python
