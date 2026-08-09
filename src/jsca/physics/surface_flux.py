@@ -29,9 +29,10 @@ with the implicit derivatives ``dhdt_surf``/``dhdt_atm``/``dedt_surf``/
 -cd_m*w_atm*rho``. The 2 m / 10 m diagnostics (``temp_2m``, ``u_10m``, ``q_2m``,
 ``rh_2m``) use the Monin-Obukhov reference-height ratios (``mo_profile``).
 
-**Scope:** the aquaplanet ocean path only. Land/bucket evaporation, the NCAR
-ocean-flux override, the mixing-ratio / Raoult / alt-gustiness options, and
-``use_virtual_temp=.true.`` (``d608 != 0``) are not ported (they are flagged
+Both ``use_virtual_temp`` settings are ported (Frierson uses False, ``column_test``
+True) — see the ``surface_flux`` argument. **Scope otherwise:** the aquaplanet ocean
+path only. Land/bucket evaporation, the NCAR ocean-flux override, and the
+mixing-ratio / Raoult / alt-gustiness options are not ported (they are flagged
 here). Deviation: only the documented ``sat_vapor_pres`` table-vs-closed-form
 ``es`` difference (~2e-7) enters, through ``q_sat`` and the 2 m diagnostics.
 
@@ -90,6 +91,7 @@ def surface_flux(
     rough_mom: Array, rough_heat: Array, rough_moist: Array, gust: Array,
     q_surf_in: Array,
     mo_params: MOParams = MOParams(),
+    use_virtual_temp: bool = False,
 ) -> SurfaceFluxResult:
     """Bulk ocean surface fluxes (Frierson do_simple path).
 
@@ -99,8 +101,18 @@ def surface_flux(
     incoming ``q_surf`` (used only by the 2 m diagnostic). ``rough_scale`` is
     taken equal to ``rough_mom`` (the driver's setting), so the orographic drag
     rescaling is the identity.
+
+    ``use_virtual_temp`` (``surface_flux_nml``; Frierson False, column_test True)
+    selects the virtual-temperature correction to the surface-layer stability
+    (F90 L461-464, L573): the Monin-Obukhov drag then sees the *virtual* potential
+    temperatures ``thv = th*(1 + d608*q)`` and the density uses the virtual
+    temperature, so buoyancy accounts for moisture. With it False, ``d608 = 0`` and
+    everything reduces to the actual/potential-temperature path.
     """
     kappa = constants.KAPPA          # = rdgas/cp_air
+    # d608 = rvgas/rdgas - 1 (= d378/d622); zeroed when use_virtual_temp is off
+    # (F90 surface_flux_init L928-937).
+    d608 = (constants.RVGAS / constants.RDGAS - 1.0) if use_virtual_temp else 0.0
     # --- surface saturation humidity (do_simple) and its temperature derivative ---
     e_sat = saturation_vapor_pressure(t_surf)
     e_sat1 = saturation_vapor_pressure(t_surf + _DEL_TEMP)
@@ -108,11 +120,12 @@ def surface_flux(
     q_sat1 = _D622 * e_sat1 / p_surf
     q_surf0 = q_sat                  # ocean: saturated surface
 
-    # --- Monin-Obukhov drag (d608 = 0, so thv = potential/actual T) ---
+    # --- Monin-Obukhov drag: virtual potential temperatures (F90 L461-464) ---
     p_ratio = (p_surf / p_atm) ** kappa
-    th_atm = t_atm * p_ratio
-    thv_atm = th_atm                 # use_virtual_temp = False
-    thv_surf = t_surf
+    th_atm = t_atm * p_ratio                       # potential T (used by the fluxes)
+    tv_atm = t_atm * (1.0 + d608 * q_atm)          # virtual T (used by rho)
+    thv_atm = th_atm * (1.0 + d608 * q_atm)        # virtual potential T (= tv_atm*p_ratio)
+    thv_surf = t_surf * (1.0 + d608 * q_surf0)     # surface virtual (potential) T
 
     u_dif = u_surf - u_atm
     v_dif = v_surf - v_atm
@@ -137,7 +150,7 @@ def surface_flux(
     drag_t = cd_t * w_atm
     drag_q = cd_q * w_atm
     drag_m = cd_m * w_atm
-    rho = p_atm / (constants.RDGAS * t_atm)     # tv_atm = t_atm (d608=0)
+    rho = p_atm / (constants.RDGAS * tv_atm)    # virtual T (= t_atm when d608=0)
 
     # sensible heat (F90 L575-579)
     rho_drag_t = constants.CP_AIR * drag_t * rho

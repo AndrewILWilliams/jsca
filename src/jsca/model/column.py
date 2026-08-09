@@ -149,6 +149,7 @@ def build_column(
     mixed_layer_depth: float = 2.5,         # column_test mixed_layer_nml
     albedo: float = 0.30,                   # column_test mixed_layer_nml albedo_value
     do_evap: bool = False,                  # column_test lscale_cond_nml do_evap
+    use_virtual_temp: bool = True,          # column_test surface_flux_nml use_virtual_temp
     vert_difference_option: str = "simmons_and_burridge",
     **phys_kwargs,
 ) -> ColumnModel:
@@ -204,6 +205,7 @@ def build_column(
         damping=damping_driver_init(np.asarray(p_full_1d)),
         albedo=albedo,
         do_evap=do_evap,
+        use_virtual_temp=use_virtual_temp,
         **phys_kwargs,
     )
 
