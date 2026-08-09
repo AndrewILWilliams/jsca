@@ -125,14 +125,22 @@ jsca's to 1e-4 from step 1 — only the *initial* SST differed.) A second, minor
 match: `lscale_cond do_evap=False` (column_test disables rain re-evaporation), now
 threaded through `idealized_moist_phys`.
 
-The remaining difference is the day-40 T/q **profiles**: RMSD ~0.21 K / 0.20 g/kg at
-the global-average column, growing to ~0.37 K / ~0.45 g/kg in the moist tropics and
-shrinking to ~0.03 K at high latitudes. This is the one surface-layer option
-`column_test.py` uses that jsca does not yet port — `surface_flux
-use_virtual_temp=True`, a `d608*q` virtual-temperature correction to the boundary-layer
-stability (controlled test: it moves the day-40 profile 0.34 K / 0.44 g/kg, and is
-largest where humidity is largest). Porting it — the checkpoint for tightening the
-profile tolerances toward the SST level — and the near-bitwise golden step fixture are
+jsca now runs the **full canonical column config**: `surface_flux
+use_virtual_temp=True` (the `d608*q` virtual-temperature correction to the surface-layer
+stability) and `lscale_cond do_evap=False` are both ported/threaded. The
+`use_virtual_temp` path is golden-fixture-validated against Isca to 1e-6
+(`tests/test_surface_flux_fixtures.py`, from `dump_surface_flux_vt_reference.F90`), and
+its effect on the fluxes matches Isca's to 1e-4.
+
+A residual day-40 **profile** difference remains: RMSD ~0.21 K / 0.20 g/kg at the
+global-average column, ~0.37 K / ~0.45 g/kg in the moist tropics, ~0.03 K at high
+latitudes. Interestingly this is **not** a config toggle — with every namelist option
+now matched, turning `use_virtual_temp` on changed the column T profile by only
+~0.04 K RMSD (vs ~0.12 K in Isca's own on/off test), because the perturbation is
+amplified differently by the base-state difference itself. So the residual is a small
+**per-step numerical/structural difference**, largest where humidity is largest. The
+definitive tool to pin it down is the near-bitwise golden **column-step** fixture
+(instrument one Isca step, feed jsca the identical inputs, compare each stage) —
 tracked in issue #43.
 
 ### CI regression gate
@@ -147,8 +155,8 @@ discovered later. **CI never needs Isca itself**: it validates against committed
 golden trajectories
 (`baseline/reference/column_scm_isca_t264.npz`, `…_sweep.npz`; numpy-only, distilled
 from the raw Isca NetCDF), the same posture as the frierson climatology references.
-The remaining tropical-profile tolerance headroom is the `use_virtual_temp` gap;
-tightening it further is the checkpoint for porting that path (#43).
+The remaining tropical-profile tolerance headroom is the per-step residual above;
+the golden step fixture (#43) is the checkpoint for tightening it further.
 
 ### Reproducing / regenerating the Isca reference
 

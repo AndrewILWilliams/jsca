@@ -84,6 +84,7 @@ class FriersonPhysicsParams:
     gust_const: float = 0.0        # constant_gust (Frierson: 0.0)
     albedo: float = 0.31
     do_evap: bool = True           # lscale_cond re-evaporation (Frierson True; column_test False)
+    use_virtual_temp: bool = False  # surface_flux virtual-T stability (Frierson False; column True)
 
 
 class MoistPhysicsOutput(NamedTuple):
@@ -182,7 +183,8 @@ def idealized_moist_phys(
     sf = surface_flux(
         t_prev[..., -1], q_prev[..., -1], u_prev[..., -1], v_prev[..., -1],
         p_atm, z_atm, p_surf, t_surf, zero_s, zero_s,
-        rough_mom, rough_heat, rough_moist, gust, zero_s, params.mo)
+        rough_mom, rough_heat, rough_moist, gust, zero_s, params.mo,
+        use_virtual_temp=params.use_virtual_temp)
 
     # --- 5. grey radiation, up (radiative heating into dt_tg) --- F90 L1156
     tdt_rad, _olr, _net_lw = gray_rad_up(

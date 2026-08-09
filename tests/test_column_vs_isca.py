@@ -13,14 +13,15 @@ never needs Isca itself: it validates against the committed golden trajectory
 (the same posture as the frierson climatology references). To regenerate the
 reference, rebuild Isca and re-run those two scripts.
 
-Two differences set the tolerances. The **dominant** one was Isca's
-deliberately-unstable slab init (``t_surf = init_temp + 1 K``,
-``idealized_moist_phys.F90`` L643); reproducing it dropped the SST RMSD from 0.55 K
-to **0.02 K** (now asserted < 0.1 K). The **remaining** one is the surface_flux
-``use_virtual_temp=True`` path the canonical config uses but jsca does not yet port
-(a d608*q virtual-temperature correction, ~0.34 K here) -- it sets the profile
-tolerances (measured T-profile RMSD 0.21 K, q 0.20 g/kg) and is tracked in issue #43;
-porting it is the checkpoint for tightening them toward the SST level.
+The **dominant** difference was Isca's deliberately-unstable slab init
+(``t_surf = init_temp + 1 K``, ``idealized_moist_phys.F90`` L643); reproducing it
+dropped the SST RMSD from 0.55 K to **0.02 K** (now asserted < 0.1 K). jsca also now
+runs the full canonical column config (``surface_flux use_virtual_temp=True``,
+``lscale_cond do_evap=False``, both ported/threaded). A residual **profile** difference
+remains (T-profile RMSD ~0.21 K, q ~0.20 g/kg, larger in the moist tropics) that is
+**not** a config toggle -- it is present at every config and is a small per-step
+numerical/structural difference. Pinning it down needs the near-bitwise golden
+column-step fixture (tracked in issue #43); it sets the profile tolerances here.
 """
 from pathlib import Path
 
