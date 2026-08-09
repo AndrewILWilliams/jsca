@@ -120,6 +120,33 @@ during the cold-start transient, and (ii) `do_lcl_diffusivity_depth = True` in
 Richardson-based `diffusivity` does not yet implement. Closing those is tracked in
 issue #43, along with the near-bitwise golden step fixture.
 
+### CI regression gate
+
+`tests/test_column_vs_isca.py` runs this comparison on every commit and asserts jsca
+stays within tolerance of the Isca trajectory (T-profile RMSD < 0.6 K, SST RMSD
+< 0.8 K, q-profile RMSD < 0.3 g/kg, final precip within 0.3 mm/day) — so a physics
+regression fails CI rather than being discovered later. **CI never needs Isca
+itself**: it validates against the committed golden trajectory
+`baseline/reference/column_scm_isca_t264.npz` (numpy-only, distilled from the raw
+Isca NetCDF), the same posture as the frierson climatology references. Tightening
+these tolerances is the checkpoint for closing the two config gaps above.
+
+### Reproducing / regenerating the Isca reference
+
+Everything needed to rebuild the Isca side is committed, so the reference can be
+regenerated whenever the physics config or the pinned Isca changes:
+
+```bash
+bash scripts/build_isca_column.sh                 # toolchain + pinned Isca + patch
+python scripts/run_isca_column_reference.py 40    # run Isca -> atmos_daily.nc
+cp <run>/atmos_daily.nc baseline/reference/column_scm_isca_daily_t264.nc
+python scripts/distill_column_reference.py        # NetCDF -> committed .npz
+python scripts/compare_column_scm.py <atmos_daily.nc>   # refresh the figure
+```
+
+This keeps the "reproduce Isca if we want to" path live while CI itself stays
+Isca-free.
+
 ## Usage
 
 ```python
