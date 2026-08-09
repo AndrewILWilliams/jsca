@@ -30,6 +30,15 @@ real, public, parameter :: rho_cp   = rho0*cp_ocean     ! constants.F90 L90 (sla
 real, public, parameter :: kelvin   = 273.15      ! constants.F90 L245
 real, public :: orbital_period = 365.25*8.640000e4  ! EARTH_ORBITAL_PERIOD (mutable; hs_forcing_nml member)
 real, public :: solar_const = 1368.22             ! constants.F90 L260
+real, public :: omega = 7.2921150e-5              ! EARTH_OMEGA (constants.F90 L250)
+! orbital_rate = 2*pi/orbital_period (constants.F90 L307); only referenced by
+! astronomy's set_orbital / annual-mean paths, not the diurnal_solar path used here.
+real, public :: orbital_rate = 2.0*3.14159265358979323846/(365.25*8.640000e4)
+contains
+! astronomy `use`s constants_init but the diurnal path never calls it (constants
+! are compile-time parameters here); no-op stub so the `use, only` resolves.
+subroutine constants_init
+end subroutine constants_init
 end module constants_mod
 
 module fms_mod
@@ -48,6 +57,9 @@ interface write_data
 end interface
 
 contains
+
+subroutine fms_init
+end subroutine fms_init
 
 integer function mpp_pe()
   mpp_pe = 0

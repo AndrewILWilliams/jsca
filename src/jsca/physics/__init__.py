@@ -1,6 +1,11 @@
 """Physical parameterizations: the Held-Suarez forcing and the moist-physics
 column schemes (starting with saturation vapor pressure for the Frierson port)."""
 
+from .astronomy import (
+    AstronomyParams,
+    build_orbit_angle,
+    diurnal_solar,
+)
 from .damping_driver import (
     DampingDriverParams,
     damping_driver_init,
@@ -33,6 +38,9 @@ from .two_stream_gray_rad import (
 from .vert_diff import TriSurf, vert_diff_down, vert_diff_up
 
 __all__ = [
+    "AstronomyParams",
+    "build_orbit_angle",
+    "diurnal_solar",
     "HsForcingParams",
     "hs_forcing_init",
     "hs_forcing",
