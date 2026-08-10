@@ -86,6 +86,11 @@ class FriersonPhysicsParams:
     do_evap: bool = True           # lscale_cond re-evaporation (Frierson True; column_test False)
     use_virtual_temp: bool = False  # surface_flux virtual-T stability (Frierson False; column True)
     do_lcl_diffusivity_depth: bool = False  # PBL depth = convective LCL height (column True)
+    # convection scheme selector (F90 idealized_moist_phys_nml convection_scheme,
+    # dispatched L876-1000): "SIMPLE_BETTS_MILLER" (the default qe scheme) or "NONE"
+    # (no convective adjustment; large-scale condensation still runs). The
+    # FULL_BETTS_MILLER / RAS / DRY schemes are not yet ported.
+    convection_scheme: str = "SIMPLE_BETTS_MILLER"
 
 
 class MoistPhysicsOutput(NamedTuple):
@@ -153,9 +158,28 @@ def idealized_moist_phys(
     dt_tg = jnp.zeros(shape)
     dt_qg = jnp.zeros(shape)
 
-    # --- 1. convection (previous level; returns increments) --- F90 L862-877
-    rain_c, dtemp_c, dq_c, _cflag, klcl_c = qe_moist_convection(
-        t_prev, q_prev, p_full_prev, p_half_prev, delta_t)
+    # --- 1. convection (previous level; returns increments) --- F90 L876-1000
+    # convection_scheme dispatch. SIMPLE_BETTS_MILLER is the qe scheme; NONE
+    # (F90 case NO_CONV, L992-995) applies no convective adjustment at all -- zero
+    # T/q increments, no convective rain, no convective LCL (large-scale
+    # condensation below still runs, exactly as Isca leaves NO_CONV to lscale_cond).
+    scheme = params.convection_scheme.upper()
+    if scheme in ("SIMPLE_BETTS_MILLER", "SIMPLE_BETTS"):
+        rain_c, dtemp_c, dq_c, _cflag, klcl_c = qe_moist_convection(
+            t_prev, q_prev, p_full_prev, p_half_prev, delta_t)
+    elif scheme in ("NONE", "NO_CONV"):
+        dtemp_c = jnp.zeros(shape)
+        dq_c = jnp.zeros(shape)
+        rain_c = jnp.zeros(shape[:-1])
+        # No convective LCL. do_lcl_diffusivity_depth (which reads klcl) is not
+        # meaningful with NONE -- Isca leaves klcls=0 here -- so pair NONE with the
+        # bulk-Richardson PBL (do_lcl_diffusivity_depth=False).
+        klcl_c = jnp.zeros(shape[:-1], dtype=jnp.int32)
+    else:
+        raise ValueError(
+            f"unknown convection_scheme {params.convection_scheme!r} "
+            "(supported: 'SIMPLE_BETTS_MILLER', 'NONE'; "
+            "FULL_BETTS_MILLER / RAS / DRY not yet ported)")
     tg_tmp = t_prev + dtemp_c
     qg_tmp = q_prev + dq_c
     dt_tg = dt_tg + dtemp_c / delta_t
