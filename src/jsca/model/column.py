@@ -156,6 +156,7 @@ def build_column(
     do_evap: bool = False,                  # column_test lscale_cond_nml do_evap
     use_virtual_temp: bool = True,          # column_test surface_flux_nml use_virtual_temp
     do_lcl_diffusivity_depth: bool = True,  # column_test idealized_moist_phys_nml
+    convection_scheme: str = "SIMPLE_BETTS_MILLER",  # idealized_moist_phys_nml
     do_seasonal: bool = False,              # two_stream_gray_rad_nml do_seasonal
     solday: int = -10,                      # perpetual day-of-year if >= 0
     equinox_day: float = 0.75,
@@ -231,6 +232,7 @@ def build_column(
         do_evap=do_evap,
         use_virtual_temp=use_virtual_temp,
         do_lcl_diffusivity_depth=do_lcl_diffusivity_depth,
+        convection_scheme=convection_scheme,
         gray_rad=gray_rad,
         **phys_kwargs,
     )

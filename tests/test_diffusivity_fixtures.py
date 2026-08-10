@@ -32,8 +32,9 @@ def fx():
 
 @pytest.fixture(scope="module")
 def result(fx):
+    # fixture generated with diffusivity_nml do_simple=.true. (see module docstring)
     return [np.asarray(a) for a in diffusivity(
-        DiffusivityParams(), fx["df_t"], np.zeros_like(fx["df_t"]),
+        DiffusivityParams(do_simple=True), fx["df_t"], np.zeros_like(fx["df_t"]),
         fx["df_u"], fx["df_v"], fx["df_z_full"], fx["df_z_half"],
         fx["df_u_star"], fx["df_b_star"])]
 

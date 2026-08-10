@@ -54,70 +54,117 @@ Array = jnp.ndarray
 
 @dataclass(frozen=True)
 class DiffusivityParams:
-    """Static ``diffusivity_nml`` configuration (hashable; static jit arg)."""
+    """Static ``diffusivity_nml`` configuration (hashable; static jit arg).
+
+    ``do_simple`` selects the boundary-layer-depth formulation (F90 ``pbl_depth``
+    L408-451). Isca's ``diffusivity_nml`` default is ``.false.`` (what the column /
+    Frierson runs use, since neither sets ``diffusivity_nml``): the dry-static-energy
+    ``svcp`` carries the **virtual-temperature** correction ``T*(1+d608*q)`` and
+    unstable columns (``b_star > 0``) use a **parcel-buoyancy** PBL top instead of the
+    bulk-Richardson one. ``do_simple=.true.`` (the ``dump_diffusivity_reference``
+    fixture setting) drops the virtual term and always uses the Richardson branch.
+    """
 
     frac_inner: float = 0.1
     rich_crit_pbl: float = 1.0
     small: float = 1.0e-4
     background_m: float = 0.0
     background_t: float = 0.0
+    do_simple: bool = False        # Isca diffusivity_nml default (.false.)
+    parcel_buoy: float = 2.0       # unstable-PBL parcel excess (F90 L130)
+    znom: float = 1000.0           # nominal height for ws (F90 L131)
 
 
-def _pbl_depth(dp: DiffusivityParams, svcp, u, v, z, u_star, b_star):
-    """PBL depth from the bulk Richardson number (F90 ``pbl_depth``, do_simple).
+def _pbl_crossing(value, threshold, z):
+    """Walk up from the surface to the first ``value > threshold`` crossing and
+    interpolate the height (F90 ``pbl_depth`` inner loops L417-427 / L437-446).
 
-    ``svcp``/``u``/``v``/``z`` are ``(..., K)`` (heights above surface); returns
-    ``h`` ``(...)``. Walks up from the surface to the first ``Ri > rich_crit_pbl``
-    crossing and interpolates.
+    ``value``/``z`` are ``(..., K)`` with the surface at index ``-1``; ``threshold``
+    is ``(...)`` or scalar. Returns ``h`` ``(...)``. On no crossing, ``h`` stays at
+    the surface level height, matching Isca's ``h = z(ibot)`` default. Both the
+    Richardson (``value=Ri``, ``threshold=rich_crit``) and unstable parcel
+    (``value=svcp``, ``threshold=svp``) branches share this
+    ``h = h2 + (h1-h2)*(v2-threshold)/(v2-v1)`` form.
     """
-    tbot = svcp[..., -1:]                       # surface full level
-    rich = z * constants.GRAV * (svcp - tbot) / tbot / (u * u + v * v + dp.small)
-
-    # reorder surface -> top so the scan walks upward
-    rich_r = jnp.moveaxis(rich[..., ::-1], -1, 0)   # (K, ...), index 0 = surface
+    thr = jnp.broadcast_to(jnp.asarray(threshold), value.shape[:-1])
+    val_r = jnp.moveaxis(value[..., ::-1], -1, 0)   # (K, ...), index 0 = surface
     z_r = jnp.moveaxis(z[..., ::-1], -1, 0)
 
     def body(carry, level):
-        h, rich1, h1, done = carry
-        rich2, h2 = level
-        cross = (~done) & (rich2 > dp.rich_crit_pbl)
-        denom = jnp.where(rich2 - rich1 != 0.0, rich2 - rich1, 1.0)
-        h_new = h2 + (h1 - h2) * (rich2 - dp.rich_crit_pbl) / denom
+        h, v1, h1, done = carry
+        v2, h2 = level
+        cross = (~done) & (v2 > thr)
+        denom = jnp.where(v2 - v1 != 0.0, v2 - v1, 1.0)
+        h_new = h2 + (h1 - h2) * (v2 - thr) / denom
         h = jnp.where(cross, h_new, h)
         advance = (~done) & (~cross)
-        rich1 = jnp.where(advance, rich2, rich1)
+        v1 = jnp.where(advance, v2, v1)
         h1 = jnp.where(advance, h2, h1)
         done = done | cross
-        return (h, rich1, h1, done), None
+        return (h, v1, h1, done), None
 
-    h0 = z_r[0]                                  # surface height (above surface)
-    init = (h0, rich_r[0], h0, jnp.zeros(h0.shape, bool))
-    (h, _, _, _), _ = jax.lax.scan(body, init, (rich_r[1:], z_r[1:]))
+    h0 = z_r[0]
+    init = (h0, val_r[0], h0, jnp.zeros(h0.shape, bool))
+    (h, _, _, _), _ = jax.lax.scan(body, init, (val_r[1:], z_r[1:]))
     return h
+
+
+def _pbl_depth(dp: DiffusivityParams, svcp, u, v, z, u_star, b_star,
+               mo_params: MOParams = MOParams()):
+    """PBL depth (F90 ``pbl_depth`` L358-454).
+
+    ``svcp``/``u``/``v``/``z`` are ``(..., K)`` (heights above surface); returns
+    ``h`` ``(...)``. Stable/neutral columns (or ``do_simple``) use the bulk
+    Richardson crossing; unstable columns (``b_star > 0`` and not ``do_simple``) use
+    a parcel-buoyancy crossing, where the parcel's dry-static-energy excess over the
+    surface is ``svp = svcp_sfc * (1 + parcel_buoy*u_star*b_star/(g*ws))`` and ``ws``
+    comes from ``mo_diff`` at ``frac_inner*znom`` (F90 L399-405).
+    """
+    tbot = svcp[..., -1:]                       # surface full level (svcp)
+    rich = z * constants.GRAV * (svcp - tbot) / tbot / (u * u + v * v + dp.small)
+    h_rich = _pbl_crossing(rich, dp.rich_crit_pbl, z)
+    if dp.do_simple:
+        return h_rich
+
+    # unstable branch: parcel dry-static-energy top. ws = k_m(mo_diff) / (k*h_inner)
+    h_inner = dp.frac_inner * dp.znom
+    k_m_ref, _ = mo_diff(mo_params, jnp.full_like(u_star, h_inner), u_star, b_star)
+    ws = jnp.maximum(dp.small, k_m_ref / constants.VONKARM / h_inner)
+    svp = tbot[..., 0] * (1.0 + dp.parcel_buoy * u_star * b_star / constants.GRAV / ws)
+    h_unstable = _pbl_crossing(svcp, svp, z)
+    return jnp.where(b_star > 0.0, h_unstable, h_rich)
 
 
 def diffusivity(dp: DiffusivityParams, t, q, u, v, z_full, z_half,
                 u_star, b_star, mo_params: MOParams = MOParams(), ind_lcl=None):
     """Simple K-profile diffusivity. Returns ``(k_m, k_t, h)``.
 
-    ``t``/``u``/``v``/``z_full`` are ``(..., K)``; ``z_half`` is ``(..., K+1)``;
-    ``u_star``/``b_star`` are ``(...)``. ``q`` is accepted for signature
-    compatibility but unused on the do_simple path.
+    ``t``/``q``/``u``/``v``/``z_full`` are ``(..., K)``; ``z_half`` is ``(..., K+1)``;
+    ``u_star``/``b_star`` are ``(...)``. ``q`` enters the ``svcp`` virtual-temperature
+    correction on the ``do_simple=.false.`` path (Isca's default) and is unused when
+    ``dp.do_simple`` is ``True``.
 
     ``ind_lcl`` (``do_lcl_diffusivity_depth=.true.``, the ``column_test`` /
     single-column setting): when given, the boundary-layer depth ``h`` is the
     height of the **convective LCL level** (``h = z_full_ag[ind_lcl]``, F90
-    ``diffusivity`` L317-324) instead of the bulk-Richardson ``pbl_depth``. Pass
-    the 0-based LCL index from :func:`jsca.physics.qe_moist_convection` per column.
+    ``diffusivity`` L317-324) instead of ``pbl_depth`` -- this bypasses ``svcp``
+    entirely, so ``do_simple`` has no effect on the ``ind_lcl`` path. Pass the
+    0-based LCL index from :func:`jsca.physics.qe_moist_convection` per column.
     """
     gcp = constants.GRAV / constants.CP_AIR
     z_surf = z_half[..., -1:]                    # surface half level
     z_full_ag = z_full - z_surf
     z_half_ag = z_half - z_surf
 
-    svcp = t + gcp * z_full_ag                   # dry static energy / cp (do_simple)
+    # dry static energy / cp; do_simple=.false. carries the virtual-temperature
+    # correction (F90 diffusivity L307-311). d608 = rvgas/rdgas - 1.
+    if dp.do_simple:
+        svcp = t + gcp * z_full_ag
+    else:
+        d608 = constants.RVGAS / constants.RDGAS - 1.0
+        svcp = t * (1.0 + d608 * q) + gcp * z_full_ag
     if ind_lcl is None:
-        h = _pbl_depth(dp, svcp, u, v, z_full_ag, u_star, b_star)
+        h = _pbl_depth(dp, svcp, u, v, z_full_ag, u_star, b_star, mo_params)
     else:
         # PBL top = LCL height: gather z_full_ag at the LCL level per column
         h = jnp.take_along_axis(z_full_ag, ind_lcl[..., None], axis=-1)[..., 0]

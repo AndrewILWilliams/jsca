@@ -229,6 +229,39 @@ against Isca here before it runs in the full 3D model.
   jsca's per-day window omits) — a diagnostic convention, not a physics difference;
   the interior 88 days match to machine precision.
 
+* **`convection_scheme`** (`idealized_moist_phys_nml`): `"SIMPLE_BETTS_MILLER"`
+  (default, the qe scheme) or `"NONE"` (F90 `NO_CONV`) — no convective adjustment
+  at all; large-scale condensation still runs. NO_CONV pairs with the
+  bulk-Richardson PBL (`do_lcl_diffusivity_depth=False`, since there is no
+  convective LCL). It is validated by composition (every downstream module is
+  golden-fixture-validated) rather than a tight trajectory test: with convection off
+  the near-surface is only marginally stratified (dry static energy uniform to
+  ~0.1 K across the PBL), so the boundary-layer *depth* — a threshold crossing — is
+  genuinely ill-conditioned, and a ~1e-6 difference in the surface-flux `u_star`/
+  `b_star` moves the PBL top by tens of metres and amplifies over a 40-day
+  integration. Fed *identical* surface fluxes the diffusivity is exact, so this is a
+  property of the NO_CONV configuration, not a port error
+  (`tests/test_column_noconv.py`). `FULL_BETTS_MILLER` / `RAS` / `DRY` are not yet
+  ported.
+
+### Diffusivity `do_simple=.false.` (Isca's default) — a fidelity fix
+
+Isca's `diffusivity_nml` default is **`do_simple=.false.`**, which the column and
+Frierson runs use (neither sets `diffusivity_nml`). jsca originally implemented only
+the `do_simple=.true.` path; the gap was invisible until NO_CONV because every
+earlier column validation used `do_lcl_diffusivity_depth=True`, which takes the PBL
+top from the convective LCL and **bypasses `pbl_depth` (and `svcp`) entirely**. The
+`do_simple=.false.` path is now ported (`jsca/physics/diffusivity.py`): the
+dry-static-energy `svcp` carries the virtual-temperature correction `T·(1+d608·q)`,
+and unstable columns (`b_star>0`) place the PBL top with a parcel-buoyancy crossing
+instead of the Richardson one. It is golden-fixture-validated against the unmodified
+Fortran across stable **and** unstable columns to machine precision (PBL depth
+exact; `tests/test_diffusivity_nosimple_fixtures.py`). `DiffusivityParams.do_simple`
+now defaults to `False` to match Isca. The `do_lcl=True` SCM validations above are
+unchanged (they never touch this code); the Frierson 3D climatology now uses Isca's
+actual diffusivity config and should be re-confirmed at T21 (a fidelity improvement,
+not a regression).
+
 ## Usage
 
 ```python
