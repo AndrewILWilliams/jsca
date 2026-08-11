@@ -52,12 +52,18 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 
+from jsca import constants
 from jsca.physics.betts_miller import BettsMillerParams, betts_miller
 from jsca.physics.damping_driver import DampingDriverParams, rayleigh_sponge
 from jsca.physics.diffusivity import DiffusivityParams, diffusivity
 from jsca.physics.dry_convection import DryConvectionParams, dry_convection
 from jsca.physics.lscale_cond import lscale_cond
-from jsca.physics.mixed_layer import MixedLayerParams, mixed_layer_step
+from jsca.physics.mixed_layer import (
+    MixedLayerParams,
+    land_albedo,
+    land_heat_capacity,
+    mixed_layer_step,
+)
 from jsca.physics.monin_obukhov import MOParams
 from jsca.physics.qe_moist_convection import qe_moist_convection
 from jsca.physics.surface_flux import surface_flux
@@ -95,6 +101,16 @@ class FriersonPhysicsParams:
     # (no convective adjustment; large-scale condensation still runs). The
     # FULL_BETTS_MILLER / RAS / DRY schemes are not yet ported.
     convection_scheme: str = "SIMPLE_BETTS_MILLER"
+    # --- bucket hydrology / land (F90 idealized_moist_phys_nml, land_option='input')
+    # Opt-in; the defaults (bucket=False, prefactors 1.0) leave the aquaplanet path
+    # byte-for-byte unchanged. When a land mask is supplied, land_h_capacity_prefactor
+    # scales the mixed-layer heat capacity over land and land_albedo_prefactor scales
+    # the albedo (mixed_layer.F90 L437/L554); with bucket=True the surface_flux bucket
+    # evaporation path fires and the caller steps the reservoir with bucket_step.
+    bucket: bool = False
+    max_bucket_depth_land: float = 2.0
+    land_h_capacity_prefactor: float = 1.0
+    land_albedo_prefactor: float = 1.0
 
 
 class MoistPhysicsOutput(NamedTuple):
@@ -109,6 +125,12 @@ class MoistPhysicsOutput(NamedTuple):
     t_surf: Array
     precip: Array
     pbl_height: Array
+    # Per-step bucket water-budget depth changes [m] (F90 idealized_moist_phys
+    # L1021/L911 for cond/conv, surface_flux for lh). Zero on the aquaplanet path;
+    # the land-capable driver feeds these to jsca.physics.bucket.bucket_step.
+    depth_change_cond: Array
+    depth_change_conv: Array
+    depth_change_lh: Array
 
 
 def idealized_moist_phys(
@@ -135,6 +157,11 @@ def idealized_moist_phys(
     # precomputed orbital-angle table; ignored on the default perpetual-equinox path.
     time_seconds: Array | None = None,
     orb_angle: Array | None = None,
+    # land / bucket state (land_option='input'); None => aquaplanet (unchanged).
+    # land is the static 0/1 mask (...); bucket_depth is the *current*-level
+    # reservoir depth (...) [m] read by the surface_flux bucket path.
+    land: Array | None = None,
+    bucket_depth: Array | None = None,
 ) -> MoistPhysicsOutput:
     """One Frierson column-physics step (F90 ``idealized_moist_phys`` L819-1337).
 
@@ -206,6 +233,11 @@ def idealized_moist_phys(
     dt_tg = dt_tg + dtemp_c / delta_t
     dt_qg = dt_qg + dq_c / delta_t
     precip = rain_c / delta_t
+    # rain_c / rain_l are the per-step accumulated rain [kg/m^2] (convective and
+    # large-scale). They double as the bucket precipitation source; Isca converts
+    # each to a water depth via /dens_h2o (F90 L911 conv, L1021 cond) before the
+    # /delta_t that turns them into the precip *rate*.
+    rain_l = jnp.zeros(shape[:-1])
 
     # --- 2. large-scale condensation on the post-convection profile --- F90 L981
     # DRY convection is dry-only, so Isca skips large-scale condensation with it
@@ -218,7 +250,13 @@ def idealized_moist_phys(
         precip = precip + rain_l / delta_t
 
     # --- 3. grey radiation, down (surface SW/LW down; needs t_prev) --- F90 L1054
-    albedo = jnp.broadcast_to(jnp.asarray(params.albedo), lat2d.shape)
+    # Over land (land_option='input') the albedo is scaled by land_albedo_prefactor
+    # (mixed_layer.F90 L437); the aquaplanet path (land=None) keeps the scalar albedo.
+    if land is not None:
+        albedo = jnp.asarray(land_albedo(land > 0.5, params.albedo,
+                                         params.land_albedo_prefactor))
+    else:
+        albedo = jnp.broadcast_to(jnp.asarray(params.albedo), lat2d.shape)
     # q_prev is passed for rad_scheme="byrne" (humidity-dependent LW); the
     # default Frierson scheme ignores it. Uses the previous time level, matching
     # the temperature argument (F90 calls radiation on the same tracer level).
@@ -240,11 +278,24 @@ def idealized_moist_phys(
     # gust is the previous step's vert_turb gustiness (Isca inits it to 1.0 m/s and
     # updates it each step); it is an input because it is stateful across steps.
     gust = jnp.broadcast_to(jnp.asarray(gust), lat2d.shape)
-    sf = surface_flux(
-        t_prev[..., -1], q_prev[..., -1], u_prev[..., -1], v_prev[..., -1],
-        p_atm, z_atm, p_surf, t_surf, zero_s, zero_s,
-        rough_mom, rough_heat, rough_moist, gust, zero_s, params.mo,
-        use_virtual_temp=params.use_virtual_temp)
+    # Bucket path (F90 surface_flux L448-643): over land a dry/wet evaporation
+    # switch + beta-ramp keyed off bucket_depth; dt is the leapfrog span delta_t
+    # (Isca passes delta_t here, L1161), matching the rain depth changes below.
+    if params.bucket and land is not None:
+        sf = surface_flux(
+            t_prev[..., -1], q_prev[..., -1], u_prev[..., -1], v_prev[..., -1],
+            p_atm, z_atm, p_surf, t_surf, zero_s, zero_s,
+            rough_mom, rough_heat, rough_moist, gust, zero_s, params.mo,
+            use_virtual_temp=params.use_virtual_temp,
+            bucket=True, bucket_depth=bucket_depth,
+            max_bucket_depth_land=params.max_bucket_depth_land,
+            land=(land > 0.5), dt=delta_t)
+    else:
+        sf = surface_flux(
+            t_prev[..., -1], q_prev[..., -1], u_prev[..., -1], v_prev[..., -1],
+            p_atm, z_atm, p_surf, t_surf, zero_s, zero_s,
+            rough_mom, rough_heat, rough_moist, gust, zero_s, params.mo,
+            use_virtual_temp=params.use_virtual_temp)
 
     # --- 5. grey radiation, up (radiative heating into dt_tg) --- F90 L1156
     tdt_rad, _olr, _net_lw = gray_rad_up(
@@ -273,14 +324,28 @@ def idealized_moist_phys(
         sf.dtaudu_atm, sf.dtaudv_atm, dt_ug, dt_vg, dt_tg, dt_qg)
 
     # --- 9. slab-ocean surface energy balance (uses dt_real, not delta_t) --- F90 L1309
+    # Over land the mixed-layer heat capacity is scaled by land_h_capacity_prefactor
+    # (mixed_layer.F90 L554); land=None keeps the pure-ocean depth*RHO_CP.
+    heat_capacity = None if land is None else land_heat_capacity(
+        land > 0.5, params.mixed_layer.depth, params.land_h_capacity_prefactor)
     t_surf_new, _dts, tri = mixed_layer_step(
         params.mixed_layer, t_surf, sf.flux_t, sf.flux_q, sf.flux_r,
         net_surf_sw_down, surf_lw_down, sf.dhdt_surf, sf.dedt_surf, sf.drdt_surf,
-        sf.dhdt_atm, sf.dedq_atm, tri, dt_real)
+        sf.dhdt_atm, sf.dedq_atm, tri, dt_real, heat_capacity=heat_capacity)
 
     # --- 10. implicit vertical diffusion, up (finish T/q) --- F90 L1330
     dt_tg, dt_qg = vert_diff_up(delta_t, tri)
 
+    # Bucket water-budget depth changes [m] this step: convective + large-scale rain
+    # converted to a water depth (F90 L911/L1021), and the evaporative loss from the
+    # surface-flux bucket path (zero unless bucket & land). The caller steps the
+    # reservoir with jsca.physics.bucket.bucket_step after the leapfrog.
+    depth_change_conv = rain_c / constants.DENS_H2O
+    depth_change_cond = rain_l / constants.DENS_H2O
+    depth_change_lh = sf.depth_change_lh
+
     return MoistPhysicsOutput(
         dt_ug=dt_ug, dt_vg=dt_vg, dt_tg=dt_tg, dt_qg=dt_qg,
-        t_surf=t_surf_new, precip=precip, pbl_height=pbl_h)
+        t_surf=t_surf_new, precip=precip, pbl_height=pbl_h,
+        depth_change_cond=depth_change_cond, depth_change_conv=depth_change_conv,
+        depth_change_lh=depth_change_lh)
