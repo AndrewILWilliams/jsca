@@ -55,3 +55,7 @@ fortran_instrumentation/logfile.out
 # Isca single-column sweep raw outputs (regenerable via scripts/run_isca_column_sweep.py;
 # only the distilled .npz is committed as the CI reference)
 baseline/reference/column_scm_isca_lat*.nc
+
+# Sphinx documentation build output (docs/ is the source; _build is generated)
+docs/_build/
+docs/api/generated/
