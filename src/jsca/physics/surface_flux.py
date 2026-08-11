@@ -82,6 +82,7 @@ class SurfaceFluxResult(NamedTuple):
     u_10m: Array         # 10 m zonal wind (m/s)
     q_2m: Array          # 2 m specific humidity (kg/kg)
     rh_2m: Array         # 2 m relative humidity
+    depth_change_lh: Array  # bucket water removed by evaporation this step (m); 0 without bucket
 
 
 def surface_flux(
@@ -92,6 +93,11 @@ def surface_flux(
     q_surf_in: Array,
     mo_params: MOParams = MOParams(),
     use_virtual_temp: bool = False,
+    bucket: bool = False,
+    bucket_depth: Array | None = None,
+    max_bucket_depth_land: float = 2.0,
+    land: Array | None = None,
+    dt: float = 0.0,
 ) -> SurfaceFluxResult:
     """Bulk ocean surface fluxes (Frierson do_simple path).
 
@@ -118,7 +124,14 @@ def surface_flux(
     e_sat1 = saturation_vapor_pressure(t_surf + _DEL_TEMP)
     q_sat = _D622 * e_sat / p_surf
     q_sat1 = _D622 * e_sat1 / p_surf
-    q_surf0 = q_sat                  # ocean: saturated surface
+    # ocean: saturated surface. Bucket model (F90 surface_flux L448-455): a dry
+    # surface (empty bucket) has q_surf0 = q_atm, killing the humidity gradient (so
+    # no evaporation); a wet surface stays saturated. q_surf0 feeds the M-O
+    # virtual-temperature stability below, so the switch is applied here.
+    if bucket:
+        q_surf0 = jnp.where(bucket_depth <= 0.0, q_atm, q_sat)
+    else:
+        q_surf0 = q_sat
 
     # --- Monin-Obukhov drag: virtual potential temperatures (F90 L461-464) ---
     p_ratio = (p_surf / p_atm) ** kappa
@@ -158,11 +171,31 @@ def surface_flux(
     dhdt_surf = rho_drag_t
     dhdt_atm = -rho_drag_t * p_ratio
 
-    # evaporation (F90 L636-641, ocean/no-bucket)
+    # evaporation. Ocean/no-bucket path is F90 L636-641; the bucket path
+    # (F90 surface_flux L587-643) adds a beta ramp over land and a hard cap.
     rho_drag_q = drag_q * rho
-    flux_q = rho_drag_q * (q_surf0 - q_atm)
-    dedt_surf = rho_drag_q * (q_sat1 - q_sat) / _DEL_TEMP
-    dedq_atm = -rho_drag_q
+    if bucket:
+        thresh = max_bucket_depth_land * 0.75            # 0.75*max: ramp threshold
+        # beta ramp: full evaporation over ocean or a wet-enough land bucket;
+        # linearly reduced over land once the bucket drops below 0.75*max.
+        below = land & (bucket_depth < thresh)
+        beta = jnp.where(below, bucket_depth / thresh, 1.0)
+        flux_q = beta * rho_drag_q * (q_surf0 - q_atm)
+        # cap: evaporation cannot remove more water than the bucket holds this step
+        depth_change_lh = flux_q * dt / constants.DENS_H2O
+        over = (flux_q > 0.0) & (bucket_depth < depth_change_lh)
+        flux_q = jnp.where(over, bucket_depth * constants.DENS_H2O / dt, flux_q)
+        depth_change_lh = flux_q * dt / constants.DENS_H2O
+        # implicit derivatives: zero when the bucket is empty, else beta-ramped
+        empty = bucket_depth <= 0.0
+        dedt_full = rho_drag_q * (q_sat1 - q_sat) / _DEL_TEMP
+        dedt_surf = jnp.where(empty, 0.0, beta * dedt_full)
+        dedq_atm = jnp.where(empty, 0.0, -rho_drag_q)
+    else:
+        flux_q = rho_drag_q * (q_surf0 - q_atm)
+        dedt_surf = rho_drag_q * (q_sat1 - q_sat) / _DEL_TEMP
+        dedq_atm = -rho_drag_q
+        depth_change_lh = jnp.zeros_like(flux_q)
 
     q_star = flux_q / (u_star * rho)
 
@@ -185,4 +218,5 @@ def surface_flux(
         dedq_atm=dedq_atm, drdt_surf=drdt_surf,
         dtaudu_atm=dtaudu_atm, dtaudv_atm=dtaudv_atm,
         temp_2m=temp_2m, u_10m=u_10m, q_2m=q_2m, rh_2m=rh_2m,
+        depth_change_lh=depth_change_lh,
     )
