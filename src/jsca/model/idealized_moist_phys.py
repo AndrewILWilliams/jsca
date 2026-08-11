@@ -54,6 +54,7 @@ import jax.numpy as jnp
 
 from jsca.physics.damping_driver import DampingDriverParams, rayleigh_sponge
 from jsca.physics.diffusivity import DiffusivityParams, diffusivity
+from jsca.physics.dry_convection import DryConvectionParams, dry_convection
 from jsca.physics.lscale_cond import lscale_cond
 from jsca.physics.mixed_layer import MixedLayerParams, mixed_layer_step
 from jsca.physics.monin_obukhov import MOParams
@@ -76,6 +77,7 @@ class FriersonPhysicsParams:
     gray_rad: GrayRadParams = field(default_factory=GrayRadParams)
     mo: MOParams = field(default_factory=MOParams)
     diff: DiffusivityParams = field(default_factory=DiffusivityParams)
+    dry_conv: DryConvectionParams = field(default_factory=DryConvectionParams)
     mixed_layer: MixedLayerParams = field(default_factory=MixedLayerParams)
     damping: DampingDriverParams | None = None  # from damping_driver_init(pref)
     roughness_mom: float = 3.21e-5
@@ -175,11 +177,22 @@ def idealized_moist_phys(
         # meaningful with NONE -- Isca leaves klcls=0 here -- so pair NONE with the
         # bulk-Richardson PBL (do_lcl_diffusivity_depth=False).
         klcl_c = jnp.zeros(shape[:-1], dtype=jnp.int32)
+    elif scheme in ("DRY", "DRY_CONV"):
+        # Dry convective adjustment (F90 case DRY_CONV, L950-960): returns a
+        # temperature *rate* and no moisture change; large-scale condensation is
+        # skipped below (F90 L1009). Convert the rate to an increment so the shared
+        # tg_tmp / dt_tg bookkeeping applies.
+        dry_rate, _cape, _cin, _lzb, _lcl = dry_convection(
+            params.dry_conv, t_prev, p_full_prev, p_half_prev)
+        dtemp_c = dry_rate * delta_t
+        dq_c = jnp.zeros(shape)
+        rain_c = jnp.zeros(shape[:-1])
+        klcl_c = jnp.zeros(shape[:-1], dtype=jnp.int32)
     else:
         raise ValueError(
             f"unknown convection_scheme {params.convection_scheme!r} "
-            "(supported: 'SIMPLE_BETTS_MILLER', 'NONE'; "
-            "FULL_BETTS_MILLER / RAS / DRY not yet ported)")
+            "(supported: 'SIMPLE_BETTS_MILLER', 'NONE', 'DRY'; "
+            "FULL_BETTS_MILLER / RAS not yet ported)")
     tg_tmp = t_prev + dtemp_c
     qg_tmp = q_prev + dq_c
     dt_tg = dt_tg + dtemp_c / delta_t
@@ -187,11 +200,14 @@ def idealized_moist_phys(
     precip = rain_c / delta_t
 
     # --- 2. large-scale condensation on the post-convection profile --- F90 L981
-    rain_l, dtemp_l, dq_l = lscale_cond(
-        tg_tmp, qg_tmp, p_full_prev, p_half_prev, do_evap=params.do_evap)
-    dt_tg = dt_tg + dtemp_l / delta_t
-    dt_qg = dt_qg + dq_l / delta_t
-    precip = precip + rain_l / delta_t
+    # DRY convection is dry-only, so Isca skips large-scale condensation with it
+    # (F90 L1009: "inconsistent with the dry convection scheme, don't run it").
+    if scheme not in ("DRY", "DRY_CONV"):
+        rain_l, dtemp_l, dq_l = lscale_cond(
+            tg_tmp, qg_tmp, p_full_prev, p_half_prev, do_evap=params.do_evap)
+        dt_tg = dt_tg + dtemp_l / delta_t
+        dt_qg = dt_qg + dq_l / delta_t
+        precip = precip + rain_l / delta_t
 
     # --- 3. grey radiation, down (surface SW/LW down; needs t_prev) --- F90 L1054
     albedo = jnp.broadcast_to(jnp.asarray(params.albedo), lat2d.shape)

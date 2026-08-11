@@ -68,6 +68,16 @@ def test_noconv_differs_from_betts_miller():
     assert not np.allclose(q_none, q_bm)
 
 
+def test_dry_convection_runs_stably():
+    """convection_scheme='DRY' (dry adjustment, no moisture, no large-scale
+    condensation) integrates stably and stays physical."""
+    m = C.build_column(convection_scheme="DRY", do_lcl_diffusivity_depth=False)
+    s = C.integrate(m, C.initial_state(m), n_steps=200, cold_start=True)
+    _, _, tg, qg, _, t_surf = s
+    assert np.all(np.isfinite(np.asarray(tg))) and np.all(np.isfinite(np.asarray(qg)))
+    assert np.all(np.asarray(t_surf) > 200.0) and np.all(np.asarray(t_surf) < 360.0)
+
+
 def test_unknown_scheme_raises():
     with pytest.raises(ValueError, match="convection_scheme"):
         m = C.build_column(convection_scheme="RAS")

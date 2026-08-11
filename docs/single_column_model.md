@@ -230,8 +230,13 @@ against Isca here before it runs in the full 3D model.
   the interior 88 days match to machine precision.
 
 * **`convection_scheme`** (`idealized_moist_phys_nml`): `"SIMPLE_BETTS_MILLER"`
-  (default, the qe scheme) or `"NONE"` (F90 `NO_CONV`) — no convective adjustment
-  at all; large-scale condensation still runs. NO_CONV pairs with the
+  (default, the qe scheme), `"DRY"` (Schneider–Walker dry convective adjustment —
+  relaxes T toward a prescribed lapse rate `gamma` over `tau`; touches only
+  temperature and, like Isca, **skips large-scale condensation**;
+  golden-fixture-validated to machine precision incl. CAPE/CIN and the surface-based
+  *and* elevated-LCL cases, `tests/test_dry_convection_fixtures.py`), or `"NONE"`
+  (F90 `NO_CONV`) — no convective adjustment at all; large-scale condensation still
+  runs. NO_CONV pairs with the
   bulk-Richardson PBL (`do_lcl_diffusivity_depth=False`, since there is no
   convective LCL). It is validated by composition (every downstream module is
   golden-fixture-validated) rather than a tight trajectory test: with convection off

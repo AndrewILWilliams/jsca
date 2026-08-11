@@ -12,6 +12,7 @@ from .damping_driver import (
     rayleigh_sponge,
 )
 from .diffusivity import DiffusivityParams, diffusivity
+from .dry_convection import DryConvectionParams, dry_convection
 from .hs_forcing import (
     HsForcingParams,
     hs_forcing,
@@ -64,6 +65,8 @@ __all__ = [
     "SurfaceFluxResult",
     "DiffusivityParams",
     "diffusivity",
+    "DryConvectionParams",
+    "dry_convection",
     "vert_diff_down",
     "vert_diff_up",
     "TriSurf",
