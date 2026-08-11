@@ -103,16 +103,18 @@ logical function send_0d(id, field, time)
   type(time_type), intent(in), optional :: time
   send_0d = .true.
 end function send_0d
-logical function send_2d(id, field, time)
+logical function send_2d(id, field, time, is_in, js_in)
   integer, intent(in) :: id
   real, intent(in) :: field(:,:)
   type(time_type), intent(in), optional :: time
+  integer, intent(in), optional :: is_in, js_in   ! dry_convection: send_data(id,f,Time,1,1)
   send_2d = .true.
 end function send_2d
-logical function send_3d(id, field, time)
+logical function send_3d(id, field, time, is_in, js_in)
   integer, intent(in) :: id
   real, intent(in) :: field(:,:,:)
   type(time_type), intent(in), optional :: time
+  integer, intent(in), optional :: is_in, js_in
   send_3d = .true.
 end function send_3d
 end module diag_manager_mod
