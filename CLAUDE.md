@@ -118,6 +118,16 @@ essentially machine-adjacent tolerances (`docs/single_column_model.md`). It is
 the Tier-2 physics-chain harness (scoping §4.4) and the fast validation bench
 for new physics options.
 
+`jsca.model.bucket_model` adds **land + Manabe bucket hydrology** to the moist
+stack: a static continents land mask (`jsca.model.land.continents_land_mask`,
+ported from Isca's `land_generator_fn`), land-scaled mixed-layer heat
+capacity/albedo, the surface-flux bucket evaporation switch, and a prognostic
+soil-moisture reservoir stepped by `jsca.physics.bucket.bucket_step`. The **full
+3D run is validated against Isca** at T21 with grey radiation (bucket_depth /
+precip / t_surf pattern correlations 0.96–1.00; `docs/bucket_model.md`). The
+land wiring is opt-in, so the aquaplanet Frierson run stays byte-for-byte
+unchanged.
+
 ## Next queue (physics breadth; one item per session is a good size)
 
 The dynamical core and the Frierson/Held–Suarez/SCM stacks are complete. The
