@@ -52,6 +52,7 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 
+from jsca.physics.betts_miller import BettsMillerParams, betts_miller
 from jsca.physics.damping_driver import DampingDriverParams, rayleigh_sponge
 from jsca.physics.diffusivity import DiffusivityParams, diffusivity
 from jsca.physics.dry_convection import DryConvectionParams, dry_convection
@@ -78,6 +79,7 @@ class FriersonPhysicsParams:
     mo: MOParams = field(default_factory=MOParams)
     diff: DiffusivityParams = field(default_factory=DiffusivityParams)
     dry_conv: DryConvectionParams = field(default_factory=DryConvectionParams)
+    bm: BettsMillerParams = field(default_factory=BettsMillerParams)
     mixed_layer: MixedLayerParams = field(default_factory=MixedLayerParams)
     damping: DampingDriverParams | None = None  # from damping_driver_init(pref)
     roughness_mom: float = 3.21e-5
@@ -169,6 +171,12 @@ def idealized_moist_phys(
     if scheme in ("SIMPLE_BETTS_MILLER", "SIMPLE_BETTS"):
         rain_c, dtemp_c, dq_c, _cflag, klcl_c = qe_moist_convection(
             t_prev, q_prev, p_full_prev, p_half_prev, delta_t)
+    elif scheme in ("FULL_BETTS_MILLER", "FULL_BETTS", "BM"):
+        # full Betts-Miller (F90 case FULL_BETTS_MILLER_CONV, L921-948): returns
+        # T/q increments and rain, like the qe scheme; large-scale condensation
+        # still runs below. klcl feeds do_lcl_diffusivity_depth (moist convection).
+        rain_c, dtemp_c, dq_c, _cape, _cin, _klzb, klcl_c = betts_miller(
+            params.bm, delta_t, t_prev, q_prev, p_full_prev, p_half_prev)
     elif scheme in ("NONE", "NO_CONV"):
         dtemp_c = jnp.zeros(shape)
         dq_c = jnp.zeros(shape)
@@ -191,8 +199,8 @@ def idealized_moist_phys(
     else:
         raise ValueError(
             f"unknown convection_scheme {params.convection_scheme!r} "
-            "(supported: 'SIMPLE_BETTS_MILLER', 'NONE', 'DRY'; "
-            "FULL_BETTS_MILLER / RAS not yet ported)")
+            "(supported: 'SIMPLE_BETTS_MILLER', 'FULL_BETTS_MILLER', 'DRY', 'NONE'; "
+            "RAS not yet ported)")
     tg_tmp = t_prev + dtemp_c
     qg_tmp = q_prev + dq_c
     dt_tg = dt_tg + dtemp_c / delta_t

@@ -104,7 +104,8 @@ and `'byrne'` [Byrne & O'Gorman 2013]; `do_seasonal` seasonal+diurnal insolation
 (both `do_simple=.true.` and Isca's default `.false.` — virtual-temp `svcp` +
 unstable parcel-buoyancy PBL), `vert_diff`, `mixed_layer`, `damping_driver`,
 `hs_forcing`, `dry_convection` (Schneider–Walker dry adjustment). Convection
-selectable via `convection_scheme` (`SIMPLE_BETTS_MILLER`, `DRY`, `NONE`).
+selectable via `convection_scheme` (`SIMPLE_BETTS_MILLER`, `FULL_BETTS_MILLER`,
+`DRY`, `NONE`).
 
 Models: `jsca.model.held_suarez` (dry HS), `jsca.model.idealized_moist_phys`
 (Frierson column physics stack), `jsca.model.frierson` (moist aquaplanet
@@ -132,9 +133,9 @@ before it runs in the full 3D model. In rough order of value-per-effort:
    (Schneider & Liu 2009 giant-planet two-stream with scattering — niche).
 2. **Convection schemes** (`convection_scheme` in `idealized_moist_phys.F90`):
    `NONE`/`NO_CONV` (surfaced + fixed the `diffusivity do_simple=.false.` gap) and
-   `DRY` (Schneider–Walker dry adjustment; machine-precision fixture) are done.
-   Next: `FULL_BETTS_MILLER` (`betts_miller.F90`, distinct from the simple qe scheme
-   already ported), and `RAS` (relaxed Arakawa–Schubert, larger).
+   `DRY` (Schneider–Walker dry adjustment) and `FULL_BETTS_MILLER`
+   (`betts_miller.f90`, distinct from the simple qe scheme; own capecalcnew + LCL
+   table) are done. Next: `RAS` (relaxed Arakawa–Schubert, larger).
 3. **Surface/boundary options**: roughness lengths (heat/moist/mom), land masks
    (`mixed_layer_bc`), `qflux` ocean heat transport, `do_virtual` in vert_diff.
 4. **Big external ports** (out of scope for now): RRTM/Socrates band radiation,

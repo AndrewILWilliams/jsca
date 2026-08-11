@@ -230,7 +230,13 @@ against Isca here before it runs in the full 3D model.
   the interior 88 days match to machine precision.
 
 * **`convection_scheme`** (`idealized_moist_phys_nml`): `"SIMPLE_BETTS_MILLER"`
-  (default, the qe scheme), `"DRY"` (Schneider–Walker dry convective adjustment —
+  (default, the qe scheme), `"FULL_BETTS_MILLER"` (the classic Betts–Miller 1986
+  adjustment — its own `capecalcnew` parcel ascent with a hardcoded LCL table and
+  no virtual-temperature effect, relaxing T/q to a reference profile with the
+  `do_simp` energy-conserving timescale adjustment; golden-fixture-validated with
+  klzb/klcl exact and CAPE/tendencies to the saturation-vapour tolerance,
+  `tests/test_betts_miller_fixtures.py`), `"DRY"` (Schneider–Walker dry convective
+  adjustment —
   relaxes T toward a prescribed lapse rate `gamma` over `tau`; touches only
   temperature and, like Isca, **skips large-scale condensation**;
   golden-fixture-validated to machine precision incl. CAPE/CIN and the surface-based

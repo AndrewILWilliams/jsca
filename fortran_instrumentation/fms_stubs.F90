@@ -17,6 +17,7 @@ real, public, parameter :: stefan  = 5.6734e-8    ! constants.F90 L238
 real, public, parameter :: pstd_mks_earth = 101325.0    ! constants.F90 L252
 real, public :: pstd_mks = 101325.0               ! constants.F90 L263 (= earth default)
 real, public :: seconds_per_sol = 8.640000e4      ! Earth default (do_seasonal path only)
+real, public, parameter :: cp_vapor = 4.0 * rvgas  ! CP_VAPOR (constants.F90)
 real, public, parameter :: hlv     = 2.500e6      ! constants.F90 L123
 real, public, parameter :: hlf     = 3.34e5       ! constants.F90 L124
 real, public, parameter :: hls     = hlv + hlf    ! constants.F90 L125

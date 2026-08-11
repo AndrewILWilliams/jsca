@@ -78,6 +78,19 @@ def test_dry_convection_runs_stably():
     assert np.all(np.asarray(t_surf) > 200.0) and np.all(np.asarray(t_surf) < 360.0)
 
 
+def test_full_betts_miller_runs_stably():
+    """convection_scheme='FULL_BETTS_MILLER' integrates stably and produces a
+    genuinely different climate than the simple qe scheme after spin-up."""
+    m = C.build_column(convection_scheme="FULL_BETTS_MILLER")
+    s = C.integrate(m, C.initial_state(m), n_steps=300, cold_start=True)
+    _, _, tg, qg, _, t_surf = s
+    assert np.all(np.isfinite(np.asarray(tg))) and np.all(np.isfinite(np.asarray(qg)))
+    assert np.all(np.asarray(t_surf) > 200.0) and np.all(np.asarray(t_surf) < 360.0)
+    s_simple = C.integrate(C.build_column(), C.initial_state(C.build_column()),
+                           n_steps=300, cold_start=True)
+    assert not np.allclose(np.asarray(tg[..., 1]), np.asarray(s_simple[2][..., 1]))
+
+
 def test_unknown_scheme_raises():
     with pytest.raises(ValueError, match="convection_scheme"):
         m = C.build_column(convection_scheme="RAS")
