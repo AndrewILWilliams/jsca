@@ -32,9 +32,12 @@ change (F90 L745-746)::
 
     delta_t = fn_t + en_t·delta_t_surf ;  delta_q = fn_q + en_q·delta_t_surf
 
-**Scope:** the Frierson ocean path (``evaporation=.true.``, no q-flux, no
-prescribed/read SST, no bucket, no ice albedo, ``land_option='none'``). Pure
-arithmetic — no documented deviation.
+**Scope:** the Frierson slab path (``evaporation=.true.``, no q-flux, no
+prescribed/read SST, no ice albedo). The default is the pure ocean
+(``land_option='none'``); passing a per-column ``heat_capacity`` from
+:func:`land_heat_capacity` (with :func:`land_albedo` for the radiation) covers the
+Manabe bucket test case's ``land_option='input'`` land, where land carries its own
+thermal inertia and albedo. Pure arithmetic — no documented deviation.
 
 Layout: horizontal fields ``(...)``; consumes and returns a
 :class:`jsca.physics.vert_diff.TriSurf` (its ``dflux`` is the shared
@@ -43,6 +46,8 @@ Layout: horizontal fields ``(...)``; consumes and returns a
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+import jax.numpy as jnp
 
 from jsca import constants
 from jsca.physics.vert_diff import TriSurf
@@ -59,9 +64,55 @@ class MixedLayerParams:
     evaporation: bool = True
 
 
+def land_heat_capacity(land: Array, depth: float,
+                       land_h_capacity_prefactor: float) -> Array:
+    """Per-column surface heat capacity for the ``land_option='input'`` slab.
+
+    Port of ``mixed_layer.F90`` L514/L554: the slab heat capacity is
+    ``depth*RHO_CP`` everywhere, scaled by ``land_h_capacity_prefactor`` over land
+    (``where(land) land_sea_heat_capacity = land_h_capacity_prefactor *
+    land_sea_heat_capacity``). A prefactor < 1 gives land a smaller thermal
+    inertia (the Manabe bucket test case uses 0.1), so land warms/cools faster
+    than the ocean. Pure masked arithmetic — no lookup, no log/exp.
+
+    Args:
+      land: horizontal land mask ``(...)`` (bool).
+      depth: slab depth [m] (``mixed_layer_nml`` ``depth``).
+      land_h_capacity_prefactor: land scaling of the ocean heat capacity.
+
+    Returns:
+      Heat capacity ``(...)`` [J m^-2 K^-1] to feed :func:`mixed_layer_step`.
+    """
+    ocean = depth * constants.RHO_CP
+    return jnp.where(land, land_h_capacity_prefactor * ocean, ocean)
+
+
+def land_albedo(land: Array, albedo_value: float,
+                land_albedo_prefactor: float) -> Array:
+    """Per-column surface albedo for the ``land_option='input'`` slab.
+
+    Port of ``mixed_layer.F90`` L433/L437: ``albedo = albedo_value`` everywhere,
+    scaled by ``land_albedo_prefactor`` over land (``where(land) albedo =
+    land_albedo_prefactor * albedo``). The albedo is consumed by the radiation
+    scheme (it sets ``net_surf_sw_down``), not by :func:`mixed_layer_step`
+    directly, but it is prescribed here alongside the heat capacity so both land
+    surface fields share one definition. Pure masked arithmetic.
+
+    Args:
+      land: horizontal land mask ``(...)`` (bool).
+      albedo_value: base (ocean) albedo (``mixed_layer_nml`` ``albedo_value``).
+      land_albedo_prefactor: land scaling of the base albedo.
+
+    Returns:
+      Surface albedo ``(...)`` for the radiation scheme.
+    """
+    return jnp.where(land, land_albedo_prefactor * albedo_value, albedo_value)
+
+
 def mixed_layer_step(params: MixedLayerParams, t_surf, flux_t, flux_q, flux_r,
                      net_surf_sw_down, surf_lw_down, dhdt_surf, dedt_surf,
-                     drdt_surf, dhdt_atm, dedq_atm, tri: TriSurf, dt):
+                     drdt_surf, dhdt_atm, dedq_atm, tri: TriSurf, dt,
+                     heat_capacity=None):
     """One slab-ocean surface step.
 
     Args (all ``(...)`` horizontal, per :mod:`jsca.physics.surface_flux` /
@@ -69,6 +120,13 @@ def mixed_layer_step(params: MixedLayerParams, t_surf, flux_t, flux_q, flux_r,
     (``flux_t`` sensible, ``flux_q`` evaporation, ``flux_r`` upward LW) and their
     derivatives, the downward SW/LW at the surface, and the vert_diff coupling in
     ``tri`` (``dtmass``, ``dflux``, ``delta_t``, ``delta_q``).
+
+    ``heat_capacity`` is the ``land_sea_heat_capacity`` Isca precomputes in
+    ``mixed_layer_init`` (``mixed_layer.F90`` L512-556). The default (``None``)
+    reproduces the pure-ocean Frierson slab, ``depth*RHO_CP`` everywhere; passing
+    a per-column field (from :func:`land_heat_capacity`) gives land its own
+    thermal inertia. Either way the effective capacity carries the implicit
+    ``t_surf_dependence*dt`` correction below (F90 L725).
 
     Returns ``(t_surf_new, delta_t_surf, tri_out)`` — the updated SST, its
     increment, and ``tri`` with ``delta_t``/``delta_q`` updated for the up sweep.
@@ -96,7 +154,8 @@ def mixed_layer_step(params: MixedLayerParams, t_surf, flux_t, flux_q, flux_r,
         corrected_flux = corrected_flux + alpha_q * constants.HLV
         t_surf_dependence = t_surf_dependence + beta_q * constants.HLV
 
-    heat_capacity = params.depth * constants.RHO_CP
+    if heat_capacity is None:
+        heat_capacity = params.depth * constants.RHO_CP
     eff_heat_capacity = heat_capacity + t_surf_dependence * dt
     delta_t_surf = -corrected_flux * dt / eff_heat_capacity
     t_surf_new = t_surf + delta_t_surf
