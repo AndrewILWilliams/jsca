@@ -80,5 +80,55 @@ RRTM:
 - **Aquaplanet unchanged**: the land/bucket wiring in `idealized_moist_phys` is
   opt-in (defaults leave `land=None`), so the validated Frierson run is
   byte-for-byte identical.
-- **Next (Stage 4)**: the T21 continents climatology compared against a pinned
-  Isca bucket run (bucket_depth, precip, t_surf).
+- **Climatology vs Isca (T21)**: **done** — see below.
+
+## T21 climatology vs Isca (grey radiation, realistic continents)
+
+The full 3-D bucket model is validated against a pinned-Isca run of the *same*
+configuration: `bucket_hydrology` with grey radiation substituted for RRTM
+(`two_stream_gray=True`, `rad_scheme='frierson'`), at T21 (32×64, 40 levels),
+over the *same* continents `land.nc`. Isca was compiled from **pristine pinned
+source** (the `jsca_dump` fixture instrumentation reverted first, so the binary is
+byte-identical to the pinned algorithm). Both models ran 12 × 30-day months from a
+matched cold start; the comparison is the time-mean over the last 6 months
+(`baseline/reference/bucket_climatology_t21.png`).
+
+Skill (jsca vs Isca; pattern correlation over the whole map, or over land for the
+reservoir):
+
+| Field | bias | RMSE | corr |
+|---|---|---|---|
+| `bucket_depth` (land) | +0.013 m | 0.143 m | **0.96** |
+| `precip` | −0.11 mm/day | 0.86 mm/day | **0.97** |
+| `t_surf` | −0.002 K | 1.10 K | **1.00** |
+| `t_surf` (land) | −0.045 K | 1.39 K | **0.99** |
+
+Both models produce the classic Manabe soil-moisture pattern — driest land over
+the subtropics (~0.6 m), wettest over the midlatitude storm tracks (~1.25 m) — the
+ITCZ precipitation band, and the warm-continent surface temperatures. The residual
+differences are small-scale and unbiased: two models spun up independently from a
+cold start settle into different *phases* of the same climatological attractor, so
+point-by-point differences in the eddy field are expected while the time-mean
+patterns agree to 0.96–1.00 correlation. This is the same standard of agreement as
+the Frierson aquaplanet climatology validation (`docs/frierson_climatology.md`).
+
+### Reproducing
+
+```bash
+# 1. T21 continents land.nc (read by BOTH models)
+python scripts/make_bucket_land.py --nlat 32 --nlon 64 --out land.nc
+
+# 2. Isca run (needs a compiled IscaCodeBase built from PRISTINE pinned source):
+#    GFDL_BASE=... GFDL_ENV=gfortran OMPI_ALLOW_RUN_AS_ROOT=1 \
+python scripts/run_isca_bucket.py --months 12 --ncores 4 --land land.nc
+python scripts/extract_isca_bucket.py --datadir $GFDL_DATA/bucket_grey_t21 \
+    --avg-months 6 --out baseline/reference/bucket_isca_t21.npz
+
+# 3. jsca run (~40 min on one CPU core at T21) + comparison
+python scripts/run_jsca_bucket_climatology.py --land land.nc \
+    --spinup-days 180 --avg-days 180 --out baseline/reference/bucket_jsca_t21.npz
+python scripts/compare_bucket_climatology.py \
+    --jsca baseline/reference/bucket_jsca_t21.npz \
+    --isca baseline/reference/bucket_isca_t21.npz \
+    --out baseline/reference/bucket_climatology_t21.png
+```
