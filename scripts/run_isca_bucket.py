@@ -113,8 +113,11 @@ def main():
     cb.compile()
 
     exp = Experiment(args.name, codebase=cb)
-    exp.set_resolution("T21", 40)
     exp.namelist = build_namelist()
+    # set_resolution merges lon_max/lat_max/num_fourier/num_spherical into the
+    # existing spectral_dynamics_nml, so it MUST run after the namelist is assigned
+    # (otherwise the default T42 grid is used and the T21 land.nc mismatches).
+    exp.set_resolution("T21", 40)
     exp.diag_table = build_diag_table()
 
     land = args.land or os.path.join(os.environ["GFDL_BASE"],
