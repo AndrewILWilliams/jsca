@@ -6,6 +6,7 @@ from .astronomy import (
     build_orbit_angle,
     diurnal_solar,
 )
+from .betts_miller import BettsMillerParams, betts_miller
 from .damping_driver import (
     DampingDriverParams,
     damping_driver_init,
@@ -67,6 +68,8 @@ __all__ = [
     "diffusivity",
     "DryConvectionParams",
     "dry_convection",
+    "BettsMillerParams",
+    "betts_miller",
     "vert_diff_down",
     "vert_diff_up",
     "TriSurf",
