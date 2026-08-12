@@ -6,6 +6,18 @@ Phase 1: the validated Gaussian grid + spectral-transform layer, the
 statistical-equivalence toolkit, the Fortran fixture harvester, and the
 baseline benchmarking scripts.
 
+## Documentation
+
+Full documentation — the governing equations, every physics parameterization, the
+model configurations, an example gallery (code + figures), and the jsca-vs-Isca
+validation records — is built with Sphinx under `docs/` and configured for
+ReadTheDocs (`.readthedocs.yaml`).
+
+```bash
+pip install -r docs/requirements.txt
+make -C docs html            # open docs/_build/html/index.html
+```
+
 ## What's here, and its status
 
 | Piece | Status |
